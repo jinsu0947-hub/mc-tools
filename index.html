@@ -38,57 +38,66 @@
     canvas.addEventListener("click", function(e) {
 
       if (draggingNode) return;
-      
+
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-     // 🔵 1️⃣ Node 먼저 검사
-    let clickedNode = null;
-    const radius = 10;
+      // 1️⃣ Node 검사
+      let clickedNode = null;
+      const radius = 10;
 
-  for (let n of nodes) {
-    const dx = n.x - x;
-    const dy = n.y - y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+      for (let n of nodes) {
+        const dx = n.x - x;
+        const dy = n.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist < radius) {
-      clickedNode = n;
-      break;
-    }
-  }
+        if (dist < radius) {
+          clickedNode = n;
+          break;
+        }
+      }
 
-  if (clickedNode) {
-    selectedSegment = null; // 선 선택 해제
-    selectedNodes.push(clickedNode);
+      if (clickedNode) {
+        selectedSegment = null;
+        selectedNodes.push(clickedNode);
 
-    if (selectedNodes.length === 2) {
-      const seg = {
-        id: segments.length + 1,
-        start: selectedNodes[0],
-        end: selectedNodes[1]
+        if (selectedNodes.length === 2) {
+          segments.push({
+            id: segments.length + 1,
+            start: selectedNodes[0],
+            end: selectedNodes[1]
+          });
+          selectedNodes = [];
+        }
+
+        draw();
+        return;
+      }
+
+      // 2️⃣ 선 검사
+      selectedSegment = null;
+
+      for (let s of segments) {
+        if (isPointNearLine(x, y, s.start.x, s.start.y, s.end.x, s.end.y)) {
+          selectedSegment = s;
+          selectedNodes = [];
+          draw();
+          return;
+        }
+      }
+
+      // 3️⃣ 새 노드 생성 ⭐⭐⭐
+      const node = {
+        id: nodes.length + 1,
+        x: x,
+        y: y
       };
-      segments.push(seg);
 
-      selectedNodes = [];
-    }
-
-    draw();
-    return;
-  }
-
-  // 🔴 2️⃣ 선 검사 (Node 아닐 때만)
-  selectedSegment = null;
-
-  for (let s of segments) {
-    if (isPointNearLine(x, y, s.start.x, s.start.y, s.end.x, s.end.y)) {
-      selectedSegment = s;
-      selectedNodes = [];
-      draw();
-      return;
-    }
-  }
-});
+      nodes.push(node);
+      draw();  
+    });
+    
     canvas.addEventListener("mousedown", function(e) {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
