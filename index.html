@@ -7,6 +7,9 @@
 <body>
   <h2>McRAD - Node & Road Editor</h2>
 
+  <button onclick="downloadJSON()">Save (roads.json)</button>
+  <br><br>
+
   <canvas id="canvas" width="800" height="600" style="border:1px solid black;"></canvas>
 
   <script>
@@ -105,6 +108,35 @@
         ctx.strokeStyle = "black"; // 다시 원래 색으로
       });
     }
+
+      function downloadJSON() {
+    // 저장할 데이터 구조
+    const data = {
+      nodes: nodes.map(n => ({
+        id: n.id,
+        x: n.x,
+        y: n.y
+      })),
+      segments: segments.map(s => ({
+        id: s.id,
+        start_node: s.start.id,
+        end_node: s.end.id
+      }))
+    };
+
+    const json = JSON.stringify(data, null, 2);
+
+    // 파일 생성
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "roads.json";
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
 
   </script>
 </body>
