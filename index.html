@@ -42,6 +42,18 @@
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
+      // 🔴 선 먼저 검사
+      selectedSegment = null;
+
+      for (let s of segments) {
+        if (isPointNearLine(x, y, s.start.x, s.start.y, s.end.x, s.end.y)) {
+          selectedSegment = s;
+          selectedNodes = [];
+          draw();
+          return;
+        }
+      }
+
       // 기존 노드 클릭 감지
       let clickedNode = null;
       const radius = 10;
@@ -132,6 +144,18 @@
         ctx.lineTo(s.end.x, s.end.y);
         ctx.stroke();
       });
+
+      // 선택된 선 강조
+      if (selectedSegment) {
+        ctx.beginPath();
+        ctx.moveTo(selectedSegment.start.x, selectedSegment.start.y);
+        ctx.lineTo(selectedSegment.end.x, selectedSegment.end.y);
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "black";
+      }
 
       // 노드 그리기
       nodes.forEach(n => {
@@ -227,27 +251,32 @@
     reader.readAsText(file);
   }
 
-    document.addEventListener("keydown", function(e) {
-      if (e.key === "Delete") {
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Delete") {
 
-        if (selectedNodes.length === 0) return;
+      // 🔴 선 삭제
+      if (selectedSegment) {
+        segments = segments.filter(s => s !== selectedSegment);
+        selectedSegment = null;
+        draw();
+        return;
+      }
 
+      // 🔵 Node 삭제
+      if (selectedNodes.length > 0) {
         const nodeToDelete = selectedNodes[0];
 
-        // 1️⃣ 해당 Node와 연결된 Segment 제거
         segments = segments.filter(s =>
           s.start !== nodeToDelete && s.end !== nodeToDelete
         );
 
-        // 2️⃣ Node 제거
         nodes = nodes.filter(n => n !== nodeToDelete);
 
-        // 3️⃣ 선택 초기화
         selectedNodes = [];
-
         draw();
       }
-    });
+    }
+  });
 
   </script>
 </body>
