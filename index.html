@@ -227,6 +227,28 @@
     reader.readAsText(file);
   }
 
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Delete") {
+
+        if (selectedNodes.length === 0) return;
+
+        const nodeToDelete = selectedNodes[0];
+
+        // 1️⃣ 해당 Node와 연결된 Segment 제거
+        segments = segments.filter(s =>
+          s.start !== nodeToDelete && s.end !== nodeToDelete
+        );
+
+        // 2️⃣ Node 제거
+        nodes = nodes.filter(n => n !== nodeToDelete);
+
+        // 3️⃣ 선택 초기화
+        selectedNodes = [];
+
+        draw();
+      }
+    });
+
   </script>
 </body>
 </html>
