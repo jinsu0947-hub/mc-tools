@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>McRAD Viewer</title>
+</head>
+
+<body>
+  <h2>McRAD - Node & Road Editor</h2>
+
+  <canvas id="canvas" width="800" height="600" style="border:1px solid black;"></canvas>
+
+  <script>
+    // =========================
+    // 데이터
+    // =========================
+    let nodes = [];
+    let segments = [];
+    let selectedNodes = [];
+
+    // =========================
+    // 캔버스 설정
+    // =========================
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // =========================
+    // 클릭 이벤트
+    // =========================
+    canvas.addEventListener("click", function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // 기존 노드 클릭 감지
+      let clickedNode = null;
+      const radius = 10;
+
+      for (let n of nodes) {
+        const dx = n.x - x;
+        const dy = n.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < radius) {
+          clickedNode = n;
+          break;
+        }
+      }
+
+      if (clickedNode) {
+        // 기존 노드 선택
+        selectedNodes.push(clickedNode);
+
+        // 2개 선택되면 선 생성
+        if (selectedNodes.length === 2) {
+          const seg = {
+            id: segments.length + 1,
+            start: selectedNodes[0],
+            end: selectedNodes[1]
+          };
+          segments.push(seg);
+
+          selectedNodes = [];
+        }
+
+      } else {
+        // 새 노드 생성
+        const node = {
+          id: nodes.length + 1,
+          x: x,
+          y: y
+        };
+        nodes.push(node);
+      }
+
+      draw();
+    });
+
+    // =========================
+    // 그리기 함수
+    // =========================
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 선 그리기
+      segments.forEach(s => {
+        ctx.beginPath();
+        ctx.moveTo(s.start.x, s.start.y);
+        ctx.lineTo(s.end.x, s.end.y);
+        ctx.stroke();
+      });
+
+      // 노드 그리기
+      nodes.forEach(n => {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 선택된 노드 표시
+      selectedNodes.forEach(n => {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 8, 0, Math.PI * 2);
+        ctx.strokeStyle = "red";
+        ctx.stroke();
+        ctx.strokeStyle = "black"; // 다시 원래 색으로
+      });
+    }
+
+  </script>
+</body>
+</html>
