@@ -203,12 +203,12 @@
     URL.revokeObjectURL(url);
   }
 
-      function loadJSON() {
+  function loadJSON() {
     const fileInput = document.getElementById("fileInput");
     const file = fileInput.files[0];
 
     if (!file) {
-      alert("파일을 선택하세요");
+      alert("파일 선택");
       return;
     }
 
@@ -217,12 +217,13 @@
     reader.onload = function(e) {
       const data = JSON.parse(e.target.result);
 
-      // 기존 데이터 초기화
+      // 초기화
       nodes = [];
       segments = [];
       selectedNodes = [];
+      selectedSegment = null;
 
-      // Node 복원
+      // ✅ 1️⃣ Node 먼저 생성 (ID 유지)
       data.nodes.forEach(n => {
         nodes.push({
           id: n.id,
@@ -231,19 +232,26 @@
         });
       });
 
-      // Segment 복원 (Node 참조 연결)
+      // ✅ 2️⃣ Segment 연결 (핵심)
       data.segments.forEach(s => {
+
         const startNode = nodes.find(n => n.id === s.start_node);
         const endNode = nodes.find(n => n.id === s.end_node);
 
-        if (startNode && endNode) {
-          segments.push({
-            id: s.id,
-            start: startNode,
-            end: endNode
-          });
+        if (!startNode || !endNode) {
+          console.log("노드 연결 실패", s);
+          return;
         }
+
+        segments.push({
+          id: s.id,
+          start: startNode,
+          end: endNode
+        });
       });
+
+      console.log(nodes);
+      console.log(segments);
 
       draw();
     };
