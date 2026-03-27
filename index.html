@@ -43,61 +43,51 @@
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      // 🔴 선 먼저 검사
-      selectedSegment = null;
+     // 🔵 1️⃣ Node 먼저 검사
+    let clickedNode = null;
+    const radius = 10;
 
-      for (let s of segments) {
-        if (isPointNearLine(x, y, s.start.x, s.start.y, s.end.x, s.end.y)) {
-          selectedSegment = s;
-          selectedNodes = [];
-          draw();
-          return;
-        }
-      }
+  for (let n of nodes) {
+    const dx = n.x - x;
+    const dy = n.y - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // 기존 노드 클릭 감지
-      let clickedNode = null;
-      const radius = 10;
+    if (dist < radius) {
+      clickedNode = n;
+      break;
+    }
+  }
 
-      for (let n of nodes) {
-        const dx = n.x - x;
-        const dy = n.y - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+  if (clickedNode) {
+    selectedSegment = null; // 선 선택 해제
+    selectedNodes.push(clickedNode);
 
-        if (dist < radius) {
-          clickedNode = n;
-          break;
-        }
-      }
+    if (selectedNodes.length === 2) {
+      const seg = {
+        id: segments.length + 1,
+        start: selectedNodes[0],
+        end: selectedNodes[1]
+      };
+      segments.push(seg);
 
-      if (clickedNode) {
-        // 기존 노드 선택
-        selectedNodes.push(clickedNode);
+      selectedNodes = [];
+    }
 
-        // 2개 선택되면 선 생성
-        if (selectedNodes.length === 2) {
-          const seg = {
-            id: segments.length + 1,
-            start: selectedNodes[0],
-            end: selectedNodes[1]
-          };
-          segments.push(seg);
+    draw();
+    return;
+  }
 
-          selectedNodes = [];
-        }
+  // 🔴 2️⃣ 선 검사 (Node 아닐 때만)
+  selectedSegment = null;
 
-      } else {
-        // 새 노드 생성
-        const node = {
-          id: nodes.length + 1,
-          x: x,
-          y: y
-        };
-        nodes.push(node);
-      }
-
+  for (let s of segments) {
+    if (isPointNearLine(x, y, s.start.x, s.start.y, s.end.x, s.end.y)) {
+      selectedSegment = s;
+      selectedNodes = [];
       draw();
-   });
+      return;
+    }
+  }
 
     canvas.addEventListener("mousedown", function(e) {
       const rect = canvas.getBoundingClientRect();
@@ -319,7 +309,7 @@
     const dx = px - xx;
     const dy = py - yy;
 
-    return Math.sqrt(dx * dx + dy * dy) < 10;
+    return Math.sqrt(dx * dx + dy * dy) < 8;
   }
 
   </script>
