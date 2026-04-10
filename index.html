@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Intersection Boundary</title>
+    <title>Node Editor - Lane Node Generation</title>
     <style>
         body, html {
             margin: 0;
@@ -41,7 +41,8 @@
         <strong>[조작 가이드]</strong><br>
         - 빈 공간 클릭: Node 생성 및 연결<br>
         - 다른 Node 순서대로 클릭: 기존 Node 간 연결<br>
-        - <strong>3개 이상의 선 연결 시 교차로 감지 및 임시 Boundary(다각형)가 생성됩니다.</strong>
+        - 3개 이상의 선 연결 시 교차로 경계가 생성되며,<br>
+        &nbsp;&nbsp;<strong>경계선 위에 Lane Node(초록색 점)가 자동 생성됩니다.</strong>
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -68,9 +69,13 @@
         let intersections = [];
         let nextIntersectionId = 1;
 
+        // 1. Lane Node 상태 관리 추가
+        let laneNodes = [];
+        let nextLaneNodeId = 1;
+
         const NODE_RADIUS = 20;
 
-        // 1. 임시 Boundary Polygon 생성 함수 (정다각형)
+        // 임시 Boundary Polygon 생성 함수
         function generateBoundaryPolygon(cx, cy, radius, sides = 6) {
             const polygon = [];
             for (let i = 0; i < sides; i++) {
@@ -83,7 +88,7 @@
             return polygon;
         }
 
-        // 2. Intersection 감지 및 업데이트 함수
+        // Intersection 감지 및 Lane Node 업데이트 함수
         function updateIntersections() {
             const connectionCounts = {};
             segments.forEach(segment => {
@@ -91,26 +96,47 @@
                 connectionCounts[segment.end_node] = (connectionCounts[segment.end_node] || 0) + 1;
             });
 
+            // 1. 교차로 업데이트
             nodes.forEach(node => {
                 const count = connectionCounts[node.id] || 0;
                 const existingIndex = intersections.findIndex(i => i.node_id === node.id);
 
                 if (count >= 3) {
                     if (existingIndex === -1) {
-                        // 교차로 생성 시 boundary_polygon 데이터 함께 추가
                         const newIntersection = {
                             intersection_id: nextIntersectionId++,
                             node_id: node.id,
-                            boundary_polygon: generateBoundaryPolygon(node.x, node.y, NODE_RADIUS + 20)
+                            boundary_polygon: generateBoundaryPolygon(node.x, node.y, NODE_RADIUS + 25) // 반경을 조금 더 넓힘
                         };
                         intersections.push(newIntersection);
-                        console.log(`Intersection 생성됨: ID ${newIntersection.intersection_id} (Node ID: ${node.id})`);
                     }
                 } else {
                     if (existingIndex !== -1) {
                         intersections.splice(existingIndex, 1);
                     }
                 }
+            });
+
+            // 2. Lane Node 재계산 (간단한 동기화를 위해 매번 재생성)
+            laneNodes = [];
+            nextLaneNodeId = 1;
+
+            intersections.forEach(intersect => {
+                const poly = intersect.boundary_polygon;
+                if (!poly || poly.length === 0) return;
+
+                // Polygon의 각 변의 중간점(Midpoint)에 Lane Node 생성 (Placeholder 로직)
+                poly.forEach((p1, index) => {
+                    const p2 = poly[(index + 1) % poly.length];
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+
+                    laneNodes.push({
+                        id: nextLaneNodeId++,
+                        intersection_id: intersect.intersection_id,
+                        position: { x: midX, y: midY }
+                    });
+                });
             });
         }
 
@@ -135,7 +161,6 @@
             }
 
             if (clickedNode) {
-                // 수동 연결
                 if (active_node_id !== null && active_node_id !== clickedNode.id) {
                     const startNodeObj = nodes.find(n => n.id === active_node_id);
                     
@@ -151,12 +176,10 @@
                         }
                     };
                     segments.push(newSegment);
-                    
                     updateIntersections();
                 }
                 active_node_id = clickedNode.id;
             } else {
-                // 자동 연결 및 생성
                 const newNode = {
                     id: nextNodeId++,
                     x: x,
@@ -182,7 +205,6 @@
 
                 nodes.push(newNode);
                 active_node_id = newNode.id; 
-                
                 updateIntersections();
             }
 
@@ -229,17 +251,28 @@
                 }
                 ctx.closePath();
                 
-                ctx.fillStyle = 'rgba(156, 39, 176, 0.2)'; // 반투명 보라색 배경
+                ctx.fillStyle = 'rgba(156, 39, 176, 0.2)'; 
                 ctx.fill();
-                ctx.strokeStyle = '#9C27B0'; // 보라색 테두리
+                ctx.strokeStyle = '#9C27B0'; 
                 ctx.lineWidth = 1.5;
-                ctx.setLineDash([4, 4]); // 경계선 점선 처리
+                ctx.setLineDash([4, 4]); 
                 ctx.stroke();
             });
 
             ctx.setLineDash([]);
 
-            // 3. Node 렌더링
+            // 3. Lane Node 렌더링
+            laneNodes.forEach(ln => {
+                ctx.beginPath();
+                ctx.arc(ln.position.x, ln.position.y, 6, 0, Math.PI * 2); // 일반 노드보다 작은 반지름(6)
+                ctx.fillStyle = '#20C997';   // 초록색 계열
+                ctx.fill();
+                ctx.strokeStyle = '#0CA678';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // 4. Node 렌더링
             nodes.forEach(node => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
