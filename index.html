@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Intersection Detection</title>
+    <title>Node Editor - Intersection Boundary</title>
     <style>
         body, html {
             margin: 0;
@@ -41,7 +41,7 @@
         <strong>[조작 가이드]</strong><br>
         - 빈 공간 클릭: Node 생성 및 연결<br>
         - 다른 Node 순서대로 클릭: 기존 Node 간 연결<br>
-        - <strong>한 Node에 3개 이상의 선이 연결되면 교차로(Intersection)로 감지됩니다.</strong>
+        - <strong>3개 이상의 선 연결 시 교차로 감지 및 임시 Boundary(다각형)가 생성됩니다.</strong>
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -65,38 +65,48 @@
         let segments = [];
         let nextSegmentId = 1;
 
-        // 1. Intersection 상태 관리 추가
         let intersections = [];
         let nextIntersectionId = 1;
 
         const NODE_RADIUS = 20;
 
+        // 1. 임시 Boundary Polygon 생성 함수 (정다각형)
+        function generateBoundaryPolygon(cx, cy, radius, sides = 6) {
+            const polygon = [];
+            for (let i = 0; i < sides; i++) {
+                const angle = (Math.PI * 2 * i) / sides;
+                polygon.push({
+                    x: cx + radius * Math.cos(angle),
+                    y: cy + radius * Math.sin(angle)
+                });
+            }
+            return polygon;
+        }
+
         // 2. Intersection 감지 및 업데이트 함수
         function updateIntersections() {
-            // 각 노드별 연결된 Segment 개수 계산
             const connectionCounts = {};
             segments.forEach(segment => {
                 connectionCounts[segment.start_node] = (connectionCounts[segment.start_node] || 0) + 1;
                 connectionCounts[segment.end_node] = (connectionCounts[segment.end_node] || 0) + 1;
             });
 
-            // 노드를 순회하며 Intersection 조건 확인
             nodes.forEach(node => {
                 const count = connectionCounts[node.id] || 0;
-                // 현재 노드가 이미 Intersection 리스트에 있는지 확인
                 const existingIndex = intersections.findIndex(i => i.node_id === node.id);
 
                 if (count >= 3) {
-                    // 3개 이상 연결되었고 아직 등록되지 않았다면 추가
                     if (existingIndex === -1) {
-                        intersections.push({
+                        // 교차로 생성 시 boundary_polygon 데이터 함께 추가
+                        const newIntersection = {
                             intersection_id: nextIntersectionId++,
-                            node_id: node.id
-                        });
-                        console.log(`Intersection 생성됨: ID ${nextIntersectionId - 1} (Node ID: ${node.id})`);
+                            node_id: node.id,
+                            boundary_polygon: generateBoundaryPolygon(node.x, node.y, NODE_RADIUS + 20)
+                        };
+                        intersections.push(newIntersection);
+                        console.log(`Intersection 생성됨: ID ${newIntersection.intersection_id} (Node ID: ${node.id})`);
                     }
                 } else {
-                    // 선이 삭제되는 기능이 추가될 경우를 대비한 롤백 로직 (3개 미만으로 떨어지면 제거)
                     if (existingIndex !== -1) {
                         intersections.splice(existingIndex, 1);
                     }
@@ -142,7 +152,6 @@
                     };
                     segments.push(newSegment);
                     
-                    // 선이 추가되었으므로 교차로 업데이트
                     updateIntersections();
                 }
                 active_node_id = clickedNode.id;
@@ -174,7 +183,6 @@
                 nodes.push(newNode);
                 active_node_id = newNode.id; 
                 
-                // 선이 추가되었으므로 교차로 업데이트
                 updateIntersections();
             }
 
@@ -185,7 +193,7 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Road Segment 및 Centerline 렌더링
+            // 1. Road Segment 및 Centerline 렌더링
             segments.forEach(segment => {
                 const p1 = segment.centerline.polyline[0];
                 const p2 = segment.centerline.polyline[1];
@@ -209,19 +217,30 @@
 
             ctx.setLineDash([]);
 
-            // Node 렌더링
-            nodes.forEach(node => {
-                // 3. 교차로(Intersection) 시각적 표시
-                const isIntersection = intersections.some(i => i.node_id === node.id);
-                if (isIntersection) {
-                    ctx.beginPath();
-                    // 노드보다 약간 큰 반투명 보라색 원 그리기
-                    ctx.arc(node.x, node.y, NODE_RADIUS + 8, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(156, 39, 176, 0.3)'; 
-                    ctx.fill();
-                }
+            // 2. Intersection Boundary 렌더링
+            intersections.forEach(intersect => {
+                const poly = intersect.boundary_polygon;
+                if (!poly || poly.length === 0) return;
 
-                // 기존 노드 그리기
+                ctx.beginPath();
+                ctx.moveTo(poly[0].x, poly[0].y);
+                for (let i = 1; i < poly.length; i++) {
+                    ctx.lineTo(poly[i].x, poly[i].y);
+                }
+                ctx.closePath();
+                
+                ctx.fillStyle = 'rgba(156, 39, 176, 0.2)'; // 반투명 보라색 배경
+                ctx.fill();
+                ctx.strokeStyle = '#9C27B0'; // 보라색 테두리
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]); // 경계선 점선 처리
+                ctx.stroke();
+            });
+
+            ctx.setLineDash([]);
+
+            // 3. Node 렌더링
+            nodes.forEach(node => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
                 
