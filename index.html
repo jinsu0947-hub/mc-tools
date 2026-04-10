@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Lane Generation</title>
+    <title>Node Editor - Lane Connection</title>
     <style>
         body, html {
             margin: 0;
@@ -41,7 +41,8 @@
         <strong>[조작 가이드]</strong><br>
         - 빈 공간 클릭: Node 생성 및 연결<br>
         - 다른 Node 순서대로 클릭: 기존 Node 간 연결<br>
-        - 3개 이상 선 연결 시 <strong>교차로 내부 전용 Lane(연두색 선)</strong>과 Lane Node가 생성됩니다.
+        - 3개 이상 선 연결 시 교차로 내부에 Lane이 생성되며,<br>
+        &nbsp;&nbsp;<strong>Lane 간의 연결(Lane Connection, 파란색 점선)이 자동 생성됩니다.</strong>
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -71,14 +72,15 @@
         let laneNodes = [];
         let nextLaneNodeId = 1;
 
-        // 1. Lane 데이터 상태 관리 추가
         let lanes = [];
         let nextLaneId = 1;
+
+        // 1. Lane Connection 상태 관리 추가
+        let laneConnections = [];
 
         const NODE_RADIUS = 20;
         const BOUNDARY_RADIUS = NODE_RADIUS + 25;
 
-        // 임시 Boundary Polygon 생성 함수
         function generateBoundaryPolygon(cx, cy, radius, sides = 6) {
             const polygon = [];
             for (let i = 0; i < sides; i++) {
@@ -91,7 +93,6 @@
             return polygon;
         }
 
-        // Intersection 감지 및 Lane 관련 업데이트 함수
         function updateIntersections() {
             const connectionCounts = {};
             segments.forEach(segment => {
@@ -99,7 +100,7 @@
                 connectionCounts[segment.end_node] = (connectionCounts[segment.end_node] || 0) + 1;
             });
 
-            // 1. 교차로 업데이트
+            // 교차로 업데이트
             nodes.forEach(node => {
                 const count = connectionCounts[node.id] || 0;
                 const existingIndex = intersections.findIndex(i => i.node_id === node.id);
@@ -119,9 +120,10 @@
                 }
             });
 
-            // 2. Lane Node 및 Lane 초기화 및 재계산
+            // 데이터 초기화 및 재계산
             laneNodes = [];
             lanes = [];
+            laneConnections = []; // Lane Connection 초기화
             nextLaneNodeId = 1;
             nextLaneId = 1;
 
@@ -129,15 +131,15 @@
                 const cNode = nodes.find(n => n.id === intersect.node_id);
                 if (!cNode) return;
 
-                // 이 교차로에 연결된 Road Segment 찾기
                 const connectedSegments = segments.filter(s => s.start_node === cNode.id || s.end_node === cNode.id);
+                const currentIntersectionLanes = []; // 현재 교차로에서 생성된 Lane들을 모아둘 배열
 
+                // Lane 생성
                 connectedSegments.forEach(seg => {
                     const oNodeId = (seg.start_node === cNode.id) ? seg.end_node : seg.start_node;
                     const oNode = nodes.find(n => n.id === oNodeId);
                     if (!oNode) return;
                     
-                    // Segment의 방향 벡터 계산
                     const dx = oNode.x - cNode.x;
                     const dy = oNode.y - cNode.y;
                     const len = Math.sqrt(dx * dx + dy * dy);
@@ -146,12 +148,10 @@
                     const ux = dx / len;
                     const uy = dy / len;
                     
-                    // Offset을 위한 수직(Normal) 벡터 계산 (우측 방향)
                     const nx = -uy;
                     const ny = ux;
-                    const OFFSET_DISTANCE = 8; // Centerline 기준 간격
+                    const OFFSET_DISTANCE = 8; 
                     
-                    // Lane 양 끝점 계산 (교차로 내부까지만: 중심에서 Boundary Radius 범위 내)
                     const pStart = { 
                         x: cNode.x + nx * OFFSET_DISTANCE, 
                         y: cNode.y + ny * OFFSET_DISTANCE 
@@ -161,25 +161,41 @@
                         y: cNode.y + uy * BOUNDARY_RADIUS + ny * OFFSET_DISTANCE 
                     };
 
-                    // Lane Node 생성
                     const startLaneNodeId = nextLaneNodeId++;
                     const endLaneNodeId = nextLaneNodeId++;
 
                     laneNodes.push({ id: startLaneNodeId, intersection_id: intersect.intersection_id, position: pStart });
                     laneNodes.push({ id: endLaneNodeId, intersection_id: intersect.intersection_id, position: pEnd });
 
-                    // Lane 데이터 구조 생성
-                    lanes.push({
+                    const newLane = {
                         id: nextLaneId++,
                         parent_segment_id: seg.id,
-                        lane_index: 1, // Placeholder
+                        lane_index: 1, 
                         start_lane_node: startLaneNodeId,
                         end_lane_node: endLaneNodeId,
                         lane_centerline: {
                             polyline: [pStart, pEnd]
                         }
-                    });
+                    };
+                    
+                    lanes.push(newLane);
+                    currentIntersectionLanes.push(newLane);
                 });
+
+                // 2. 현재 교차로 내부의 Lane들을 서로 연결 (Lane Connection 생성)
+                for (let i = 0; i < currentIntersectionLanes.length; i++) {
+                    for (let j = 0; j < currentIntersectionLanes.length; j++) {
+                        // 자기 자신으로의 연결은 제외하고 모두 연결 (임시 Placeholder 처리)
+                        if (i !== j) {
+                            laneConnections.push({
+                                from_lane_id: currentIntersectionLanes[i].id,
+                                to_lane_id: currentIntersectionLanes[j].id,
+                                turn_type: "straight", // 방향 벡터 계산 제외 요건에 따라 고정값 할당
+                                active: true
+                            });
+                        }
+                    }
+                }
             });
         }
 
@@ -206,46 +222,28 @@
             if (clickedNode) {
                 if (active_node_id !== null && active_node_id !== clickedNode.id) {
                     const startNodeObj = nodes.find(n => n.id === active_node_id);
-                    
                     const newSegment = {
                         id: nextSegmentId++,
                         start_node: active_node_id,
                         end_node: clickedNode.id,
-                        centerline: {
-                            polyline: [
-                                { x: startNodeObj.x, y: startNodeObj.y },
-                                { x: clickedNode.x, y: clickedNode.y }
-                            ]
-                        }
+                        centerline: { polyline: [{ x: startNodeObj.x, y: startNodeObj.y }, { x: clickedNode.x, y: clickedNode.y }] }
                     };
                     segments.push(newSegment);
                     updateIntersections();
                 }
                 active_node_id = clickedNode.id;
             } else {
-                const newNode = {
-                    id: nextNodeId++,
-                    x: x,
-                    y: y
-                };
-                
+                const newNode = { id: nextNodeId++, x: x, y: y };
                 if (active_node_id !== null) {
                     const startNodeObj = nodes.find(n => n.id === active_node_id);
-
                     const newSegment = {
                         id: nextSegmentId++,
                         start_node: active_node_id,
                         end_node: newNode.id,
-                        centerline: {
-                            polyline: [
-                                { x: startNodeObj.x, y: startNodeObj.y },
-                                { x: newNode.x, y: newNode.y }
-                            ]
-                        }
+                        centerline: { polyline: [{ x: startNodeObj.x, y: startNodeObj.y }, { x: newNode.x, y: newNode.y }] }
                     };
                     segments.push(newSegment);
                 }
-
                 nodes.push(newNode);
                 active_node_id = newNode.id; 
                 updateIntersections();
@@ -258,7 +256,7 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. Road Segment 및 Centerline 렌더링
+            // 1. Road Segment 및 Centerline
             segments.forEach(segment => {
                 const p1 = segment.centerline.polyline[0];
                 const p2 = segment.centerline.polyline[1];
@@ -268,7 +266,6 @@
                 ctx.lineTo(p2.x, p2.y);
                 ctx.lineWidth = 14;          
                 ctx.strokeStyle = '#ADB5BD'; 
-                ctx.setLineDash([]);         
                 ctx.stroke();
 
                 ctx.beginPath();
@@ -279,10 +276,9 @@
                 ctx.setLineDash([8, 8]);     
                 ctx.stroke();
             });
-
             ctx.setLineDash([]);
 
-            // 2. Intersection Boundary 렌더링
+            // 2. Intersection Boundary
             intersections.forEach(intersect => {
                 const poly = intersect.boundary_polygon;
                 if (!poly || poly.length === 0) return;
@@ -301,10 +297,30 @@
                 ctx.setLineDash([4, 4]); 
                 ctx.stroke();
             });
-
             ctx.setLineDash([]);
 
-            // 3. Lane 렌더링 (교차로 내부 전용 Lane)
+            // 3. Lane Connection 렌더링 (파란색 점선 직선)
+            laneConnections.forEach(conn => {
+                const fromLane = lanes.find(l => l.id === conn.from_lane_id);
+                const toLane = lanes.find(l => l.id === conn.to_lane_id);
+                
+                if(fromLane && toLane) {
+                    // Turn curve 생성이 제외되었으므로, 교차로 중앙부의 Lane 시작점끼리 단순 직선 연결
+                    const p1 = fromLane.lane_centerline.polyline[0];
+                    const p2 = toLane.lane_centerline.polyline[0];
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.strokeStyle = '#339AF0'; // 파란색 선
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([3, 3]);
+                    ctx.stroke();
+                }
+            });
+            ctx.setLineDash([]);
+
+            // 4. Lane
             lanes.forEach(lane => {
                 const p1 = lane.lane_centerline.polyline[0];
                 const p2 = lane.lane_centerline.polyline[1];
@@ -312,12 +328,12 @@
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = '#38D9A9'; // 눈에 띄는 연두색 계열
+                ctx.strokeStyle = '#38D9A9'; 
                 ctx.lineWidth = 3;
                 ctx.stroke();
             });
 
-            // 4. Lane Node 렌더링
+            // 5. Lane Node
             laneNodes.forEach(ln => {
                 ctx.beginPath();
                 ctx.arc(ln.position.x, ln.position.y, 5, 0, Math.PI * 2); 
@@ -328,7 +344,7 @@
                 ctx.stroke();
             });
 
-            // 5. Node 렌더링
+            // 6. Node
             nodes.forEach(node => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
