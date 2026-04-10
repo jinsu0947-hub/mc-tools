@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Centerline Rendering</title>
+    <title>Node Editor - Intersection Detection</title>
     <style>
         body, html {
             margin: 0;
@@ -39,8 +39,9 @@
 
     <div id="info-panel">
         <strong>[조작 가이드]</strong><br>
-        - 빈 공간 클릭: Node 생성 (자동 연결 및 Centerline 생성/렌더링)<br>
-        - 다른 Node 순서대로 클릭: 기존 Node 간 수동 연결 (Centerline 렌더링)
+        - 빈 공간 클릭: Node 생성 및 연결<br>
+        - 다른 Node 순서대로 클릭: 기존 Node 간 연결<br>
+        - <strong>한 Node에 3개 이상의 선이 연결되면 교차로(Intersection)로 감지됩니다.</strong>
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -64,9 +65,46 @@
         let segments = [];
         let nextSegmentId = 1;
 
+        // 1. Intersection 상태 관리 추가
+        let intersections = [];
+        let nextIntersectionId = 1;
+
         const NODE_RADIUS = 20;
 
-        // 클릭 이벤트 처리 (생성 및 데이터 구조 유지)
+        // 2. Intersection 감지 및 업데이트 함수
+        function updateIntersections() {
+            // 각 노드별 연결된 Segment 개수 계산
+            const connectionCounts = {};
+            segments.forEach(segment => {
+                connectionCounts[segment.start_node] = (connectionCounts[segment.start_node] || 0) + 1;
+                connectionCounts[segment.end_node] = (connectionCounts[segment.end_node] || 0) + 1;
+            });
+
+            // 노드를 순회하며 Intersection 조건 확인
+            nodes.forEach(node => {
+                const count = connectionCounts[node.id] || 0;
+                // 현재 노드가 이미 Intersection 리스트에 있는지 확인
+                const existingIndex = intersections.findIndex(i => i.node_id === node.id);
+
+                if (count >= 3) {
+                    // 3개 이상 연결되었고 아직 등록되지 않았다면 추가
+                    if (existingIndex === -1) {
+                        intersections.push({
+                            intersection_id: nextIntersectionId++,
+                            node_id: node.id
+                        });
+                        console.log(`Intersection 생성됨: ID ${nextIntersectionId - 1} (Node ID: ${node.id})`);
+                    }
+                } else {
+                    // 선이 삭제되는 기능이 추가될 경우를 대비한 롤백 로직 (3개 미만으로 떨어지면 제거)
+                    if (existingIndex !== -1) {
+                        intersections.splice(existingIndex, 1);
+                    }
+                }
+            });
+        }
+
+        // 클릭 이벤트 처리
         canvas.addEventListener('mousedown', (event) => {
             const rect = canvas.getBoundingClientRect();
             const x = event.clientX - rect.left;
@@ -103,6 +141,9 @@
                         }
                     };
                     segments.push(newSegment);
+                    
+                    // 선이 추가되었으므로 교차로 업데이트
+                    updateIntersections();
                 }
                 active_node_id = clickedNode.id;
             } else {
@@ -132,6 +173,9 @@
 
                 nodes.push(newNode);
                 active_node_id = newNode.id; 
+                
+                // 선이 추가되었으므로 교차로 업데이트
+                updateIntersections();
             }
 
             render();
@@ -141,36 +185,43 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. Road Segment 및 Centerline 렌더링
+            // Road Segment 및 Centerline 렌더링
             segments.forEach(segment => {
-                // polyline 데이터 참조
                 const p1 = segment.centerline.polyline[0];
                 const p2 = segment.centerline.polyline[1];
 
-                // [배경] 기존 Road Segment 선 그리기
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
-                ctx.lineWidth = 14;          // 도로의 두께를 두껍게
-                ctx.strokeStyle = '#ADB5BD'; // 옅은 회색 적용
-                ctx.setLineDash([]);         // 실선으로 초기화
+                ctx.lineWidth = 14;          
+                ctx.strokeStyle = '#ADB5BD'; 
+                ctx.setLineDash([]);         
                 ctx.stroke();
 
-                // [중앙선] Centerline 선 렌더링 (polyline 데이터 기반)
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
-                ctx.lineWidth = 2;           // 중앙선은 얇게
-                ctx.strokeStyle = '#FCC419'; // 눈에 띄는 노란색
-                ctx.setLineDash([8, 8]);     // 점선 스타일 적용
+                ctx.lineWidth = 2;           
+                ctx.strokeStyle = '#FCC419'; 
+                ctx.setLineDash([8, 8]);     
                 ctx.stroke();
             });
 
-            // 다른 요소를 그리기 위해 점선 스타일 초기화
             ctx.setLineDash([]);
 
-            // 2. Node 렌더링
+            // Node 렌더링
             nodes.forEach(node => {
+                // 3. 교차로(Intersection) 시각적 표시
+                const isIntersection = intersections.some(i => i.node_id === node.id);
+                if (isIntersection) {
+                    ctx.beginPath();
+                    // 노드보다 약간 큰 반투명 보라색 원 그리기
+                    ctx.arc(node.x, node.y, NODE_RADIUS + 8, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(156, 39, 176, 0.3)'; 
+                    ctx.fill();
+                }
+
+                // 기존 노드 그리기
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
                 
