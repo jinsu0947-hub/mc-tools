@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Manual Segment Connection</title>
+    <title>Node Editor - Centerline Generation</title>
     <style>
         body, html {
             margin: 0;
@@ -39,9 +39,8 @@
 
     <div id="info-panel">
         <strong>[조작 가이드]</strong><br>
-        - 빈 공간 클릭: Node 생성 (활성 Node가 있으면 자동 연결)<br>
-        - 기존 Node 클릭: Node 선택 및 활성화<br>
-        - 다른 Node 순서대로 클릭: 기존 Node 간 수동 연결 생성
+        - 빈 공간 클릭: Node 생성 (자동 연결 및 Centerline 생성)<br>
+        - 다른 Node 순서대로 클릭: 기존 Node 간 수동 연결 (Centerline 생성)
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -60,7 +59,7 @@
         // --- 데이터 상태 관리 ---
         let nodes = []; 
         let nextNodeId = 1; 
-        let active_node_id = null; // 선택된 Node 상태 관리
+        let active_node_id = null; 
 
         let segments = [];
         let nextSegmentId = 1;
@@ -89,24 +88,29 @@
             }
 
             if (clickedNode) {
-                // 1. 기존 노드를 클릭한 경우 (수동 연결 로직)
-                
-                // Active Node가 존재하고, 방금 클릭한 노드가 Active Node와 다른 경우에만 선 생성
-                // (중복 선택 방지: 같은 노드 두 번 클릭 시 선 생성 안 함)
+                // 1. 기존 노드를 클릭한 경우 (수동 연결)
                 if (active_node_id !== null && active_node_id !== clickedNode.id) {
+                    const startNodeObj = nodes.find(n => n.id === active_node_id);
+                    
                     const newSegment = {
                         id: nextSegmentId++,
                         start_node: active_node_id,
-                        end_node: clickedNode.id
+                        end_node: clickedNode.id,
+                        // Centerline 데이터 구조 추가 (2점 polyline)
+                        centerline: {
+                            polyline: [
+                                { x: startNodeObj.x, y: startNodeObj.y },
+                                { x: clickedNode.x, y: clickedNode.y }
+                            ]
+                        }
                     };
                     segments.push(newSegment);
                 }
                 
-                // 클릭한 노드를 새로운 Active Node로 설정
                 active_node_id = clickedNode.id;
 
             } else {
-                // 2. 빈 공간을 클릭한 경우 (기존 노드 생성 및 자동 연결 로직 유지)
+                // 2. 빈 공간을 클릭한 경우 (생성 및 자동 연결)
                 const newNode = {
                     id: nextNodeId++,
                     x: x,
@@ -114,10 +118,19 @@
                 };
                 
                 if (active_node_id !== null) {
+                    const startNodeObj = nodes.find(n => n.id === active_node_id);
+
                     const newSegment = {
                         id: nextSegmentId++,
                         start_node: active_node_id,
-                        end_node: newNode.id
+                        end_node: newNode.id,
+                        // Centerline 데이터 구조 추가 (2점 polyline)
+                        centerline: {
+                            polyline: [
+                                { x: startNodeObj.x, y: startNodeObj.y },
+                                { x: newNode.x, y: newNode.y }
+                            ]
+                        }
                     };
                     segments.push(newSegment);
                 }
@@ -133,23 +146,35 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Road Segment 렌더링
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = '#868E96'; 
-
+            // 1. Road Segment 렌더링 (도로 배경 및 Centerline)
             segments.forEach(segment => {
-                const startNode = nodes.find(n => n.id === segment.start_node);
-                const endNode = nodes.find(n => n.id === segment.end_node);
+                // 저장된 centerline의 vertices(점 배열)를 가져옴
+                const p1 = segment.centerline.polyline[0];
+                const p2 = segment.centerline.polyline[1];
 
-                if (startNode && endNode) {
-                    ctx.beginPath();
-                    ctx.moveTo(startNode.x, startNode.y);
-                    ctx.lineTo(endNode.x, endNode.y);
-                    ctx.stroke();
-                }
+                // 도로 배경 그리기 (두꺼운 회색 선)
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineWidth = 12; // 도로 폭 느낌을 위해 조금 두껍게 설정
+                ctx.strokeStyle = '#868E96'; 
+                ctx.setLineDash([]); // 실선
+                ctx.stroke();
+
+                // Centerline 그리기 (얇은 노란색 점선)
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#FFD43B'; // 중앙선 색상
+                ctx.setLineDash([10, 10]); // 점선 패턴 [선의 길이, 공백의 길이]
+                ctx.stroke();
             });
 
-            // Node 렌더링
+            // 렌더링 설정 초기화 (노드를 그릴 때 점선이 적용되지 않도록)
+            ctx.setLineDash([]);
+
+            // 2. Node 렌더링
             nodes.forEach(node => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
