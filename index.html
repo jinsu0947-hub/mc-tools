@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Lane Boundary Generation</title>
+    <title>Node Editor - Road Polygon Generation</title>
     <style>
         body, html {
             margin: 0;
@@ -40,8 +40,8 @@
     <div id="info-panel">
         <strong>[조작 가이드]</strong><br>
         - 빈 공간 클릭: Node 생성 및 연결<br>
-        - 3개 이상 선 연결 시 교차로가 생성되며,<br>
-        &nbsp;&nbsp;내부 Lane에 <strong>좌/우 경계선(Lane Boundary, 진한 초록색 얇은 선)</strong>이 함께 생성됩니다.
+        - 연결 시 <strong>Road Polygon(밝은 회색 영역)</strong>이 자동 계산되어 도로 전체 폭의 경계를 형성합니다.<br>
+        - 3개 이상 선 연결 시 교차로 및 내부 Lane 데이터가 함께 생성됩니다.
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -79,12 +79,17 @@
         let turnCurves = [];
         let nextCurveId = 1;
 
+        // 1. Road Polygon 상태 관리 추가
+        let roadPolygons = [];
+
         const NODE_RADIUS = 20;
         const BOUNDARY_RADIUS = NODE_RADIUS + 25;
         
-        // Lane 설정 값
+        // 차로 설정 및 도로 폭 계산용 상수
         const LANE_WIDTH = 6; 
         const HALF_LANE_WIDTH = LANE_WIDTH / 2;
+        const LANE_COUNT = 2; // 임시: 왕복 2차선 기준
+        const ROAD_HALF_WIDTH = (LANE_WIDTH * LANE_COUNT) + 4; // Road Polygon 전체 반폭 (차선폭 + 여유폭)
 
         function getQuadraticBezierPoint(p0, p1, p2, t) {
             const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
@@ -101,7 +106,34 @@
             return polygon;
         }
 
+        // 전체 구조(Road Polygon 및 Intersections) 업데이트
         function updateIntersections() {
+            // 1. Road Polygon 데이터 생성 (Centerline Offset 방식)
+            roadPolygons = [];
+            segments.forEach(seg => {
+                const p1 = seg.centerline.polyline[0];
+                const p2 = seg.centerline.polyline[1];
+                
+                const dx = p2.x - p1.x, dy = p2.y - p1.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len === 0) return;
+                
+                const ux = dx / len, uy = dy / len;
+                const nx = -uy, ny = ux; // 직교 법선 벡터
+                
+                // 좌우 Offset을 적용한 4개의 꼭짓점으로 다각형(Polygon) 생성
+                const v1 = { x: p1.x + nx * ROAD_HALF_WIDTH, y: p1.y + ny * ROAD_HALF_WIDTH };
+                const v2 = { x: p2.x + nx * ROAD_HALF_WIDTH, y: p2.y + ny * ROAD_HALF_WIDTH };
+                const v3 = { x: p2.x - nx * ROAD_HALF_WIDTH, y: p2.y - ny * ROAD_HALF_WIDTH };
+                const v4 = { x: p1.x - nx * ROAD_HALF_WIDTH, y: p1.y - ny * ROAD_HALF_WIDTH };
+                
+                roadPolygons.push({
+                    road_id: seg.id,
+                    polygon_vertices: [v1, v2, v3, v4]
+                });
+            });
+
+            // 2. Intersection 연산
             const connectionCounts = {};
             segments.forEach(segment => {
                 connectionCounts[segment.start_node] = (connectionCounts[segment.start_node] || 0) + 1;
@@ -122,7 +154,7 @@
                 }
             });
 
-            // 데이터 초기화
+            // 내부 차로 및 곡선 초기화
             laneNodes = []; lanes = []; laneConnections = []; turnCurves = [];
             nextLaneNodeId = 1; nextLaneId = 1; nextCurveId = 1;
 
@@ -133,7 +165,6 @@
                 const connectedSegments = segments.filter(s => s.start_node === cNode.id || s.end_node === cNode.id);
                 const currentIntersectionLanes = [];
 
-                // 1. Lane 및 Lane Boundary 생성
                 connectedSegments.forEach(seg => {
                     const oNodeId = (seg.start_node === cNode.id) ? seg.end_node : seg.start_node;
                     const oNode = nodes.find(n => n.id === oNodeId);
@@ -145,14 +176,11 @@
                     const nx = -uy, ny = ux;
                     const OFFSET = 8; 
                     
-                    // Centerline Points
                     const pStart = { x: cNode.x + nx * OFFSET, y: cNode.y + ny * OFFSET };
                     const pEnd = { x: cNode.x + ux * BOUNDARY_RADIUS + nx * OFFSET, y: cNode.y + uy * BOUNDARY_RADIUS + ny * OFFSET };
 
-                    // Boundary Points (Normal 벡터를 이용한 좌/우 Offset 적용)
                     const left_pStart = { x: pStart.x - nx * HALF_LANE_WIDTH, y: pStart.y - ny * HALF_LANE_WIDTH };
                     const left_pEnd = { x: pEnd.x - nx * HALF_LANE_WIDTH, y: pEnd.y - ny * HALF_LANE_WIDTH };
-                    
                     const right_pStart = { x: pStart.x + nx * HALF_LANE_WIDTH, y: pStart.y + ny * HALF_LANE_WIDTH };
                     const right_pEnd = { x: pEnd.x + nx * HALF_LANE_WIDTH, y: pEnd.y + ny * HALF_LANE_WIDTH };
 
@@ -161,23 +189,15 @@
                     laneNodes.push({ id: endId, intersection_id: intersect.intersection_id, position: pEnd });
 
                     const newLane = {
-                        id: nextLaneId++, 
-                        parent_segment_id: seg.id, 
-                        lane_index: 1,
-                        start_lane_node: startId, 
-                        end_lane_node: endId,
+                        id: nextLaneId++, parent_segment_id: seg.id, lane_index: 1,
+                        start_lane_node: startId, end_lane_node: endId,
                         lane_centerline: { polyline: [pStart, pEnd] },
-                        // Lane Boundary 데이터를 내부 필드에 배열 구조로 추가
-                        boundaries: {
-                            left: [left_pStart, left_pEnd],
-                            right: [right_pStart, right_pEnd]
-                        }
+                        boundaries: { left: [left_pStart, left_pEnd], right: [right_pStart, right_pEnd] }
                     };
                     lanes.push(newLane);
                     currentIntersectionLanes.push(newLane);
                 });
 
-                // 2. Connection 및 Turn Curve 생성
                 for (let i = 0; i < currentIntersectionLanes.length; i++) {
                     for (let j = 0; j < currentIntersectionLanes.length; j++) {
                         if (i === j) continue;
@@ -203,11 +223,8 @@
 
                         turnCurves.push({
                             id: nextCurveId++,
-                            start_lane_node: fromLane.start_lane_node,
-                            end_lane_node: toLane.start_lane_node,
-                            curve_type: "bezier",
-                            control_points: [p0, p1, p2],
-                            sample_points: samples
+                            start_lane_node: fromLane.start_lane_node, end_lane_node: toLane.start_lane_node,
+                            curve_type: "bezier", control_points: [p0, p1, p2], sample_points: samples
                         });
                     }
                 }
@@ -253,7 +270,25 @@
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. Road & Centerline
+            // 1. Road Polygon 렌더링 (가장 아래 레이어, 넓은 폭의 다각형)
+            roadPolygons.forEach(rp => {
+                const poly = rp.polygon_vertices;
+                if (!poly || poly.length < 3) return;
+
+                ctx.beginPath();
+                ctx.moveTo(poly[0].x, poly[0].y);
+                for (let i = 1; i < poly.length; i++) {
+                    ctx.lineTo(poly[i].x, poly[i].y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = '#E9ECEF'; // 밝은 회색 면
+                ctx.fill();
+                ctx.strokeStyle = '#CED4DA'; // 테두리 선
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            // 2. 기존 Road Segment & Centerline
             segments.forEach(s => {
                 const [p1, p2] = s.centerline.polyline;
                 ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
@@ -263,7 +298,7 @@
             });
             ctx.setLineDash([]);
 
-            // 2. Intersection Boundary
+            // 3. Intersection Boundary
             intersections.forEach(intersect => {
                 const poly = intersect.boundary_polygon;
                 ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y);
@@ -273,7 +308,7 @@
             });
             ctx.setLineDash([]);
 
-            // 3. Turn Curve
+            // 4. Turn Curve
             turnCurves.forEach(curve => {
                 const pts = curve.sample_points;
                 ctx.beginPath();
@@ -286,32 +321,29 @@
                 ctx.stroke();
             });
 
-            // 4. Lanes (Centerline & Boundaries)
+            // 5. Lanes (Centerline & Boundaries)
             lanes.forEach(l => {
                 const [cp1, cp2] = l.lane_centerline.polyline;
                 const [lp1, lp2] = l.boundaries.left;
                 const [rp1, rp2] = l.boundaries.right;
 
-                // Left Boundary 렌더링
                 ctx.beginPath(); ctx.moveTo(lp1.x, lp1.y); ctx.lineTo(lp2.x, lp2.y);
                 ctx.strokeStyle = '#2B8A3E'; ctx.lineWidth = 1; ctx.stroke();
 
-                // Right Boundary 렌더링
                 ctx.beginPath(); ctx.moveTo(rp1.x, rp1.y); ctx.lineTo(rp2.x, rp2.y);
                 ctx.strokeStyle = '#2B8A3E'; ctx.lineWidth = 1; ctx.stroke();
 
-                // Lane Centerline 렌더링
                 ctx.beginPath(); ctx.moveTo(cp1.x, cp1.y); ctx.lineTo(cp2.x, cp2.y);
                 ctx.strokeStyle = '#38D9A9'; ctx.lineWidth = 3; ctx.stroke();
             });
 
-            // 5. Lane Nodes
+            // 6. Lane Nodes
             laneNodes.forEach(ln => {
                 ctx.beginPath(); ctx.arc(ln.position.x, ln.position.y, 4, 0, Math.PI * 2);
                 ctx.fillStyle = '#20C997'; ctx.fill();
             });
 
-            // 6. Central Nodes
+            // 7. Central Nodes
             nodes.forEach(node => {
                 ctx.beginPath(); ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
                 ctx.fillStyle = node.id === active_node_id ? '#FF6B6B' : '#4A90E2';
