@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Active Node</title>
+    <title>Node Editor - Auto Segment Generation</title>
     <style>
         body, html {
             margin: 0;
@@ -37,7 +37,7 @@
 <body>
 
     <div id="info-panel">
-        빈 공간을 클릭해 Node를 생성하고, 기존 Node를 클릭해 선택해보세요.
+        빈 공간을 클릭해 Node를 생성해보세요. 활성화된 Node가 있다면 자동으로 연결됩니다.
     </div>
     
     <canvas id="editor-canvas"></canvas>
@@ -56,13 +56,15 @@
         // --- 데이터 상태 관리 ---
         let nodes = []; 
         let nextNodeId = 1; 
-        
-        // 1. active_node_id 상태 추가
         let active_node_id = null; 
+
+        // 1. Road Segment 리스트 및 ID 관리 추가
+        let segments = [];
+        let nextSegmentId = 1;
 
         const NODE_RADIUS = 20;
 
-        // 2. 클릭 이벤트 처리 (생성 및 선택 로직 분리)
+        // 클릭 이벤트 처리
         canvas.addEventListener('mousedown', (event) => {
             const rect = canvas.getBoundingClientRect();
             const x = event.clientX - rect.left;
@@ -70,15 +72,12 @@
 
             let clickedNode = null;
 
-            // 나중에 생성된(화면상 맨 위에 그려진) 노드부터 클릭 여부 검사
             for (let i = nodes.length - 1; i >= 0; i--) {
                 const node = nodes[i];
-                // 마우스 클릭 좌표와 노드 중심 사이의 거리 계산
                 const dx = x - node.x;
                 const dy = y - node.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // 클릭 반경 내에 노드가 있으면 선택된 것으로 간주
                 if (distance <= NODE_RADIUS) {
                     clickedNode = node;
                     break;
@@ -89,37 +88,67 @@
                 // 기존 노드를 클릭한 경우: Active Node로 설정
                 active_node_id = clickedNode.id;
             } else {
-                // 빈 공간을 클릭한 경우: 기존 Node 생성 기능 유지
+                // 빈 공간을 클릭한 경우: 새 Node 생성
                 const newNode = {
                     id: nextNodeId++,
                     x: x,
                     y: y
                 };
+                
+                // 2. Road Segment 자동 생성 로직
+                // Active Node가 존재하면 새 Node와 연결하는 Segment 생성
+                if (active_node_id !== null) {
+                    const newSegment = {
+                        id: nextSegmentId++,
+                        start_node: active_node_id,
+                        end_node: newNode.id
+                    };
+                    segments.push(newSegment);
+                }
+
                 nodes.push(newNode);
                 
-                // 편의상 방금 생성한 노드를 Active 상태로 만듦
+                // 새로 생성된 노드를 Active Node로 설정 (연속 그리기를 위해 유지)
                 active_node_id = newNode.id; 
             }
 
             render();
         });
 
-        // 3. Node 화면 렌더링 (Active Node 시각적 표시 추가)
+        // 화면 렌더링
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // 3. Road Segment 렌더링 (선)
+            // 선을 노드보다 먼저 그려서 노드 아래에 깔리게 함
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#868E96'; // 선 색상
+
+            segments.forEach(segment => {
+                // start_node와 end_node의 좌표를 찾기
+                const startNode = nodes.find(n => n.id === segment.start_node);
+                const endNode = nodes.find(n => n.id === segment.end_node);
+
+                if (startNode && endNode) {
+                    ctx.beginPath();
+                    ctx.moveTo(startNode.x, startNode.y);
+                    ctx.lineTo(endNode.x, endNode.y);
+                    ctx.stroke();
+                }
+            });
+
+            // 노드 렌더링
             nodes.forEach(node => {
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
                 
-                // Active 상태에 따른 색상 및 굵기 변경
                 if (node.id === active_node_id) {
-                    ctx.fillStyle = '#FF6B6B';   // 활성화된 노드 배경 (붉은색 계열)
-                    ctx.strokeStyle = '#C92A2A'; // 활성화된 노드 테두리
+                    ctx.fillStyle = '#FF6B6B';   
+                    ctx.strokeStyle = '#C92A2A'; 
                     ctx.lineWidth = 3;
                 } else {
-                    ctx.fillStyle = '#4A90E2';   // 기본 노드 배경 (푸른색 계열)
-                    ctx.strokeStyle = '#357ABD'; // 기본 노드 테두리
+                    ctx.fillStyle = '#4A90E2';   
+                    ctx.strokeStyle = '#357ABD'; 
                     ctx.lineWidth = 2;
                 }
                 
