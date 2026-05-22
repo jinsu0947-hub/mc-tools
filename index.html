@@ -2,358 +2,502 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node Editor - Road Polygon Generation</title>
+    <title>Procedural Road Network System - Stable Core</title>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #f0f2f5;
-        }
-
-        #editor-canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            cursor: crosshair;
-        }
-
-        #info-panel {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-family: sans-serif;
-            pointer-events: none;
-            line-height: 1.5;
-        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #1e1e1e; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 340px; padding: 25px; background: #141414; border-right: 1px solid #2d2d2d; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.3); }
+        #canvas-container { flex: 1; position: relative; background: #1a1a1a; display: flex; justify-content: center; align-items: center; }
+        canvas { background: #161616; border: 1px solid #2d2d2d; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        h3 { margin-top: 0; color: #fff; font-weight: 600; font-size: 18px; letter-spacing: -0.5px; }
+        h4 { margin: 20px 0 8px 0; color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        hr { border: 0; border-top: 1px solid #2d2d2d; margin: 15px 0; }
+        button { background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 10px 14px; font-weight: 500; border-radius: 6px; cursor: pointer; margin-bottom: 10px; width: 100%; transition: all 0.2s ease; text-align: left; display: flex; align-items: center; justify-content: space-between; }
+        button:hover { background: #3a3a3a; border-color: #555; }
+        button.primary { background: #007acc; border-color: #0098ff; font-weight: 600; text-align: center; justify-content: center; }
+        button.primary:hover { background: #0098ff; }
+        .log { font-size: 11px; color: #00ff66; font-family: 'Consolas', monospace; background: #0a0a0a; border: 1px solid #222; padding: 12px; border-radius: 6px; flex: 1; overflow-y: auto; box-shadow: inset 0 2px 6px rgba(0,0,0,0.5); line-height: 1.5; }
+        .legend { font-size: 11px; color: #aaa; margin-top: 15px; background: #1a1a1a; padding: 10px; border-radius: 6px; border: 1px solid #252525; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+        .legend-color { width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; }
     </style>
 </head>
 <body>
 
-    <div id="info-panel">
-        <strong>[조작 가이드]</strong><br>
-        - 빈 공간 클릭: Node 생성 및 연결<br>
-        - 연결 시 <strong>Road Polygon(밝은 회색 영역)</strong>이 자동 계산되어 도로 전체 폭의 경계를 형성합니다.<br>
-        - 3개 이상 선 연결 시 교차로 및 내부 Lane 데이터가 함께 생성됩니다.
-    </div>
+<div id="sidebar">
+    <h3>Road Network Core v1.0</h3>
+    <p style="font-size: 12px; color: #666; margin: -10px 0 10px 0;">구조와 기하가 완벽히 분리된 파이프라인 엔진</p>
+    <hr>
+    <button onclick="buildSampleNetwork()">1. 위상(Topology) 데이터 로드 <span>[Step 1]</span></button>
+    <button class="primary" onclick="runPipeline()">2. 파이프라인 일괄 실행 <span>▶</span></button>
     
-    <canvas id="editor-canvas"></canvas>
+    <h4>엔진 빌드 로그</h4>
+    <div id="log" class="log">대기 중...</div>
 
-    <script>
-        const canvas = document.getElementById('editor-canvas');
-        const ctx = canvas.getContext('2d');
+    <div class="legend">
+        <div style="font-weight: bold; margin-bottom: 5px; color: #fff;">범례 (Legend)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #ffffff;"></div>일반 노드 (Topology Control)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #ff3366;"></div>교차로 중심 노드 (Intersection)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #00ffcc;"></div>교차로 바운더리 (Boundary Line)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #00ff00;"></div>진입 차선 노드 (Incoming Lane)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #ffff00;"></div>진출 차선 노드 (Outgoing Lane)</div>
+        <div class="legend-item"><div class="legend-color" style="background: #0096ff;"></div>차선 연결선 (Turn Curve)</div>
+    </div>
+</div>
 
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            render();
+<div id="canvas-container">
+    <canvas id="roadCanvas" width="900" height="700"></canvas>
+</div>
+
+<script>
+// ============================================================================
+// 1. DATA STRUCTURES (순수 위상 구조체 정의 - 주입 데이터)
+// ============================================================================
+class RoadNode {
+    constructor(id, x, y, z = 0) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.connectedSegments = []; // 연관 세그먼트 ID 리스트 저장
+    }
+}
+
+class RoadSegment {
+    constructor(id, startNodeId, endNodeId, laneCount = 2, laneWidth = 4) {
+        this.id = id;
+        this.startNode = startNodeId;
+        this.endNode = endNodeId;
+        this.laneCount = laneCount;
+        this.laneWidth = laneWidth;
+        this.roadWidth = laneCount * laneWidth;
+    }
+}
+
+// ============================================================================
+// 2. CORE ENGINE (절차적 도로 생성 파이프라인 커널)
+// ============================================================================
+class RoadNetworkEngine {
+    constructor() {
+        // [Pure Topology State] 디스크에 영구 세이브 가능한 핵심 무결성 데이터
+        this.nodes = new Map();
+        this.segments = new Map();
+
+        // [Derived Geometry State] 위상 변경 시 파이프라인을 통해서만 동적 재생성되는 파생 객체
+        this.centerlines = new Map();     
+        this.intersections = new Map();   
+        this.laneStructures = {
+            laneNodes: [],                // Boundary 원주 상에 계산 배치되는 차선 진입/진출 점
+            connections: [],              // Incoming -> Outgoing 차선 간 위상 구조
+            turnCurves: [],               // 차선 간 실제 통행 기하 곡선 데이터 (Bezier)
+            roadPolygons: []              // 도시 생성 시스템과 연동할 일반 도로 다각형 면 데이터
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // Topology Mutators (위상 제어기: 기하 연산은 일절 수행하지 않음)
+    // ------------------------------------------------------------------------
+    clearAll() {
+        this.nodes.clear();
+        this.segments.clear();
+        this.clearDerivedData();
+    }
+
+    clearDerivedData() {
+        this.centerlines.clear();
+        this.intersections.clear();
+        this.laneStructures = { laneNodes: [], connections: [], turnCurves: [], roadPolygons: [] };
+    }
+
+    addNode(id, x, y, z = 0) {
+        if (this.nodes.has(id)) return false;
+        this.nodes.set(id, new RoadNode(id, x, y, z));
+        return true;
+    }
+
+    addSegment(id, startId, endId, laneCount = 2, laneWidth = 4) {
+        // [제약 조건 1: 중복 Segment 생성 전면 차단]
+        for (let seg of this.segments.values()) {
+            if ((seg.startNode === startId && seg.endNode === endId) ||
+                (seg.startNode === endId && seg.endNode === startId)) {
+                return false;
+            }
         }
-        window.addEventListener('resize', resizeCanvas);
 
-        // --- 데이터 상태 관리 ---
-        let nodes = []; 
-        let nextNodeId = 1; 
-        let active_node_id = null; 
+        const segment = new RoadSegment(id, startId, endId, laneCount, laneWidth);
+        this.segments.set(id, segment);
+        this.nodes.get(startId).connectedSegments.push(id);
+        this.nodes.get(endId).connectedSegments.push(id);
+        return true;
+    }
 
-        let segments = [];
-        let nextSegmentId = 1;
+    // ============================================================================
+    // PIPELINE MANAGER (단계별 단방향 실행 통제 장치)
+    // ============================================================================
+    updatePipeline() {
+        this.clearDerivedData();
 
-        let intersections = [];
-        let nextIntersectionId = 1;
+        try {
+            // Step 1: Centerline 생성 (System Vertex 및 각 노드별 방향 벡터 추출)
+            this._generateCenterlines();
 
-        let laneNodes = [];
-        let nextLaneNodeId = 1;
+            // Step 2: 교차로 판정 및 물리 바운더리 폴리곤(Buffer 반영) 계산 
+            this._buildIntersectionsAndBoundaries();
 
-        let lanes = [];
-        let nextLaneId = 1;
+            // Step 3: 차선 노드 배치 (Spec 준수: 자의적 위치가 아닌 Boundary 선상 배치)
+            this._generateLaneNodesOnBoundaries();
 
-        let laneConnections = [];
+            // Step 4: 차선 연결 규칙 정의 (Incoming -> Outgoing 엄격한 방향 필터링)
+            this._connectLanes();
 
-        let turnCurves = [];
-        let nextCurveId = 1;
+            // Step 5: 최종 기하 형태 파생 (일반 도로구간 Polygon 및 교차로 내 Turn Curve 베지에 연산)
+            this._generateFinalGeometries();
 
-        // 1. Road Polygon 상태 관리 추가
-        let roadPolygons = [];
+            return true;
+        } catch (error) {
+            console.error("Pipeline Fails:", error);
+            return false;
+        }
+    }
 
-        const NODE_RADIUS = 20;
-        const BOUNDARY_RADIUS = NODE_RADIUS + 25;
+    // ------------------------------------------------------------------------
+    // Pipeline Sub-steps (완벽히 쪼개진 기능 단위 로직)
+    // ------------------------------------------------------------------------
+    
+    _generateCenterlines() {
+        for (const [id, seg] of this.segments) {
+            const start = this.nodes.get(seg.startNode);
+            const end = this.nodes.get(seg.endNode);
+            
+            // 단순 직선이어도 안정적 분할 처리를 위해 중간 System Vertex 자동 연산 삽입
+            const midX = (start.x + end.x) / 2;
+            const midY = (start.y + end.y) / 2;
+            
+            this.centerlines.set(id, {
+                roadId: id,
+                vertices: [
+                    { x: start.x, y: start.y },
+                    { x: midX, y: midY }, 
+                    { x: end.x, y: end.y }
+                ],
+                // 곡선의 접선(Tangent) 연산 연속성을 위해 노드 기준 벡터 산출
+                tangentStart: this._calculateVector(start, end),
+                tangentEnd: this._calculateVector(end, start)
+            });
+        }
+    }
+
+    _buildIntersectionsAndBoundaries() {
+        for (const [nodeId, node] of this.nodes) {
+            // Spec 규칙 2: 3개 이상의 Road Segment가 연결된 Node에서 자동 생성
+            if (node.connectedSegments.length >= 3) {
+                const bufferDistance = 35; // 기하학적 꼬임을 막는 제약조건 Buffer
+                const boundaryPolygon = [];
+                
+                node.connectedSegments.forEach(segId => {
+                    const seg = this.segments.get(segId);
+                    const targetNode = this.nodes.get(seg.startNode === nodeId ? seg.endNode : seg.startNode);
+                    const dir = this._calculateVector(node, targetNode);
+                    
+                    // 노드 중심에서 도로 방향으로 바운더리 경계 평면용 법선 기반 오프셋 연산
+                    const perpX = -dir.y;
+                    const perpY = dir.x;
+                    const halfWidth = seg.roadWidth / 2;
+
+                    // 도로 양쪽 끝단 진입점 계산 (교차로 진입구 경계선 확보)
+                    const centerPoint = { x: node.x + dir.x * bufferDistance, y: node.y + dir.y * bufferDistance };
+                    
+                    boundaryPolygon.push({
+                        x: centerPoint.x + perpX * halfWidth,
+                        y: centerPoint.y + perpY * halfWidth,
+                        segmentId: segId,
+                        side: 'LEFT'
+                    });
+                    boundaryPolygon.push({
+                        x: centerPoint.x - perpX * halfWidth,
+                        y: centerPoint.y - perpY * halfWidth,
+                        segmentId: segId,
+                        side: 'RIGHT'
+                    });
+                });
+
+                // 버텍스 정렬 (볼록 다각형 껍질 형태 유지를 위해 각도 기준 정렬)
+                const cx = node.x;
+                const cy = node.y;
+                boundaryPolygon.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+
+                this.intersections.set(nodeId, {
+                    intersectionId: `inter-${nodeId}`,
+                    centerNodeId: nodeId,
+                    boundaryPolygon: boundaryPolygon
+                });
+            }
+        }
+    }
+
+    _generateLaneNodesOnBoundaries() {
+        for (const [nodeId, inter] of this.intersections) {
+            const centerNode = this.nodes.get(nodeId);
+            
+            centerNode.connectedSegments.forEach(segId => {
+                const seg = this.segments.get(segId);
+                const targetNode = this.nodes.get(seg.startNode === nodeId ? seg.endNode : seg.startNode);
+                const dir = this._calculateVector(centerNode, targetNode);
+                const perpX = -dir.y;
+                const perpY = dir.x;
+
+                const bufferDistance = 35;
+                const centerBoundaryX = centerNode.x + dir.x * bufferDistance;
+                const centerBoundaryY = centerNode.y + dir.y * bufferDistance;
+
+                // 차선 수에 맞춰 바운더리 평면 위에 동등 간격 정렬 배치
+                for (let i = 0; i < seg.laneCount; i++) {
+                    const offsetMultiplier = (i - (seg.laneCount - 1) / 2) * seg.laneWidth;
+                    
+                    // 도로의 우측 절반은 INCOMING, 좌측 절반은 OUTGOING 처리 (우측통행 기준 선형 정의)
+                    const isIncoming = i >= seg.laneCount / 2; 
+
+                    this.laneStructures.laneNodes.push({
+                        id: `ln-${seg.id}-L${i}-${nodeId}`,
+                        intersectionId: inter.intersectionId,
+                        segmentId: seg.id,
+                        x: centerBoundaryX + perpX * offsetMultiplier,
+                        y: centerBoundaryY + perpY * offsetMultiplier,
+                        type: isIncoming ? 'INCOMING' : 'OUTGOING',
+                        laneIndex: i
+                    });
+                }
+            });
+        }
+    }
+
+    _connectLanes() {
+        const laneNodes = this.laneStructures.laneNodes;
         
-        // 차로 설정 및 도로 폭 계산용 상수
-        const LANE_WIDTH = 6; 
-        const HALF_LANE_WIDTH = LANE_WIDTH / 2;
-        const LANE_COUNT = 2; // 임시: 왕복 2차선 기준
-        const ROAD_HALF_WIDTH = (LANE_WIDTH * LANE_COUNT) + 4; // Road Polygon 전체 반폭 (차선폭 + 여유폭)
+        for (let i = 0; i < laneNodes.length; i++) {
+            for (let j = 0; j < laneNodes.length; j++) {
+                const fromNode = laneNodes[i];
+                const toNode = laneNodes[j];
 
-        function getQuadraticBezierPoint(p0, p1, p2, t) {
-            const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
-            const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y;
-            return { x, y };
-        }
-
-        function generateBoundaryPolygon(cx, cy, radius, sides = 6) {
-            const polygon = [];
-            for (let i = 0; i < sides; i++) {
-                const angle = (Math.PI * 2 * i) / sides;
-                polygon.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
-            }
-            return polygon;
-        }
-
-        // 전체 구조(Road Polygon 및 Intersections) 업데이트
-        function updateIntersections() {
-            // 1. Road Polygon 데이터 생성 (Centerline Offset 방식)
-            roadPolygons = [];
-            segments.forEach(seg => {
-                const p1 = seg.centerline.polyline[0];
-                const p2 = seg.centerline.polyline[1];
-                
-                const dx = p2.x - p1.x, dy = p2.y - p1.y;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len === 0) return;
-                
-                const ux = dx / len, uy = dy / len;
-                const nx = -uy, ny = ux; // 직교 법선 벡터
-                
-                // 좌우 Offset을 적용한 4개의 꼭짓점으로 다각형(Polygon) 생성
-                const v1 = { x: p1.x + nx * ROAD_HALF_WIDTH, y: p1.y + ny * ROAD_HALF_WIDTH };
-                const v2 = { x: p2.x + nx * ROAD_HALF_WIDTH, y: p2.y + ny * ROAD_HALF_WIDTH };
-                const v3 = { x: p2.x - nx * ROAD_HALF_WIDTH, y: p2.y - ny * ROAD_HALF_WIDTH };
-                const v4 = { x: p1.x - nx * ROAD_HALF_WIDTH, y: p1.y - ny * ROAD_HALF_WIDTH };
-                
-                roadPolygons.push({
-                    road_id: seg.id,
-                    polygon_vertices: [v1, v2, v3, v4]
-                });
-            });
-
-            // 2. Intersection 연산
-            const connectionCounts = {};
-            segments.forEach(segment => {
-                connectionCounts[segment.start_node] = (connectionCounts[segment.start_node] || 0) + 1;
-                connectionCounts[segment.end_node] = (connectionCounts[segment.end_node] || 0) + 1;
-            });
-
-            nodes.forEach(node => {
-                const count = connectionCounts[node.id] || 0;
-                const existingIndex = intersections.findIndex(i => i.node_id === node.id);
-                if (count >= 3 && existingIndex === -1) {
-                    intersections.push({
-                        intersection_id: nextIntersectionId++,
-                        node_id: node.id,
-                        boundary_polygon: generateBoundaryPolygon(node.x, node.y, BOUNDARY_RADIUS) 
-                    });
-                } else if (count < 3 && existingIndex !== -1) {
-                    intersections.splice(existingIndex, 1);
-                }
-            });
-
-            // 내부 차로 및 곡선 초기화
-            laneNodes = []; lanes = []; laneConnections = []; turnCurves = [];
-            nextLaneNodeId = 1; nextLaneId = 1; nextCurveId = 1;
-
-            intersections.forEach(intersect => {
-                const cNode = nodes.find(n => n.id === intersect.node_id);
-                if (!cNode) return;
-
-                const connectedSegments = segments.filter(s => s.start_node === cNode.id || s.end_node === cNode.id);
-                const currentIntersectionLanes = [];
-
-                connectedSegments.forEach(seg => {
-                    const oNodeId = (seg.start_node === cNode.id) ? seg.end_node : seg.start_node;
-                    const oNode = nodes.find(n => n.id === oNodeId);
-                    if (!oNode) return;
+                // [Spec 규칙 7 & 8 준수] 동일 교차로 내부 소속 && 다른 도로 간 연결 && INCOMING에서 OUTGOING으로만 유효 매핑
+                if (fromNode.intersectionId === toNode.intersectionId && 
+                    fromNode.segmentId !== toNode.segmentId && 
+                    fromNode.type === 'INCOMING' && toNode.type === 'OUTGOING') {
                     
-                    const dx = oNode.x - cNode.x, dy = oNode.y - cNode.y;
-                    const len = Math.sqrt(dx * dx + dy * dy);
-                    const ux = dx / len, uy = dy / len;
-                    const nx = -uy, ny = ux;
-                    const OFFSET = 8; 
-                    
-                    const pStart = { x: cNode.x + nx * OFFSET, y: cNode.y + ny * OFFSET };
-                    const pEnd = { x: cNode.x + ux * BOUNDARY_RADIUS + nx * OFFSET, y: cNode.y + uy * BOUNDARY_RADIUS + ny * OFFSET };
-
-                    const left_pStart = { x: pStart.x - nx * HALF_LANE_WIDTH, y: pStart.y - ny * HALF_LANE_WIDTH };
-                    const left_pEnd = { x: pEnd.x - nx * HALF_LANE_WIDTH, y: pEnd.y - ny * HALF_LANE_WIDTH };
-                    const right_pStart = { x: pStart.x + nx * HALF_LANE_WIDTH, y: pStart.y + ny * HALF_LANE_WIDTH };
-                    const right_pEnd = { x: pEnd.x + nx * HALF_LANE_WIDTH, y: pEnd.y + ny * HALF_LANE_WIDTH };
-
-                    const startId = nextLaneNodeId++, endId = nextLaneNodeId++;
-                    laneNodes.push({ id: startId, intersection_id: intersect.intersection_id, position: pStart });
-                    laneNodes.push({ id: endId, intersection_id: intersect.intersection_id, position: pEnd });
-
-                    const newLane = {
-                        id: nextLaneId++, parent_segment_id: seg.id, lane_index: 1,
-                        start_lane_node: startId, end_lane_node: endId,
-                        lane_centerline: { polyline: [pStart, pEnd] },
-                        boundaries: { left: [left_pStart, left_pEnd], right: [right_pStart, right_pEnd] }
-                    };
-                    lanes.push(newLane);
-                    currentIntersectionLanes.push(newLane);
-                });
-
-                for (let i = 0; i < currentIntersectionLanes.length; i++) {
-                    for (let j = 0; j < currentIntersectionLanes.length; j++) {
-                        if (i === j) continue;
-
-                        const fromLane = currentIntersectionLanes[i];
-                        const toLane = currentIntersectionLanes[j];
-
-                        laneConnections.push({
-                            from_lane_id: fromLane.id,
-                            to_lane_id: toLane.id,
-                            turn_type: "placeholder",
-                            active: true
-                        });
-
-                        const p0 = fromLane.lane_centerline.polyline[0]; 
-                        const p2 = toLane.lane_centerline.polyline[0];   
-                        const p1 = { x: cNode.x, y: cNode.y };          
-
-                        const samples = [];
-                        for (let t = 0; t <= 1; t += 0.2) { 
-                            samples.push(getQuadraticBezierPoint(p0, p1, p2, t));
-                        }
-
-                        turnCurves.push({
-                            id: nextCurveId++,
-                            start_lane_node: fromLane.start_lane_node, end_lane_node: toLane.start_lane_node,
-                            curve_type: "bezier", control_points: [p0, p1, p2], sample_points: samples
-                        });
-                    }
+                    this.laneStructures.connections.push({
+                        fromLaneId: fromNode.id,
+                        toLaneId: toNode.id,
+                    });
                 }
+            }
+        }
+    }
+
+    _generateFinalGeometries() {
+        // 1. 일반 도로구간 면(Polygon) 파생 구조 연산 (Centerline 오프셋 확장)
+        for (const [segId, seg] of this.segments) {
+            const centerline = this.centerlines.get(segId);
+            const startNode = this.nodes.get(seg.startNode);
+            const endNode = this.nodes.get(seg.endNode);
+
+            const dir = this._calculateVector(startNode, endNode);
+            const perpX = -dir.y;
+            const perpY = dir.x;
+            const halfWidth = seg.roadWidth / 2;
+
+            // 교차로 영역 안쪽으로 침범하지 않도록 버퍼를 제한한 렌더용 외곽 폴리곤 생성
+            const startBuffer = startNode.connectedSegments.length >= 3 ? 35 : 0;
+            const endBuffer = endNode.connectedSegments.length >= 3 ? 35 : 0;
+
+            const p1 = { x: startNode.x + dir.x * startBuffer + perpX * halfWidth, y: startNode.y + dir.y * startBuffer + perpY * halfWidth };
+            const p2 = { x: endNode.x - dir.x * endBuffer + perpX * halfWidth, y: endNode.y - dir.y * endBuffer + perpY * halfWidth };
+            const p3 = { x: endNode.x - dir.x * endBuffer - perpX * halfWidth, y: endNode.y - dir.y * endBuffer - perpY * halfWidth };
+            const p4 = { x: startNode.x + dir.x * startBuffer - perpX * halfWidth, y: startNode.y + dir.y * startBuffer - perpY * halfWidth };
+
+            this.laneStructures.roadPolygons.push({
+                segmentId: segId,
+                polygonPoints: [p1, p2, p3, p4]
             });
         }
 
-        canvas.addEventListener('mousedown', (event) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = event.clientX - rect.left, y = event.clientY - rect.top;
-            let clickedNode = null;
+        // 2. 교차로 내부 관통 Turn Curve 파생 계산 (중심 수렴 파괴 버그 완벽 수정)
+        this.laneStructures.connections.forEach(conn => {
+            const fromLN = this.laneStructures.laneNodes.find(n => n.id === conn.fromLaneId);
+            const toLN = this.laneStructures.laneNodes.find(n => n.id === conn.toLaneId);
+            const interNodeId = fromLN.intersectionId.replace('inter-', '');
+            const centerNode = this.nodes.get(interNodeId);
 
-            for (let i = nodes.length - 1; i >= 0; i--) {
-                const node = nodes[i];
-                if (Math.sqrt((x - node.x)**2 + (y - node.y)**2) <= NODE_RADIUS) {
-                    clickedNode = node; break;
-                }
-            }
+            // 벡터 합성 방식의 Bezier Control Point 연산 적용: 각 차선 진입 방향 유지선 연장
+            const dirFrom = this._calculateVector(centerNode, this.nodes.get(this.segments.get(fromLN.segmentId).startNode === centerNode.id ? this.segments.get(fromLN.segmentId).endNode : this.segments.get(fromLN.segmentId).startNode));
+            const dirTo = this._calculateVector(centerNode, this.nodes.get(this.segments.get(toLN.segmentId).startNode === centerNode.id ? this.segments.get(toLN.segmentId).endNode : this.segments.get(toLN.segmentId).startNode));
 
-            if (clickedNode) {
-                if (active_node_id !== null && active_node_id !== clickedNode.id) {
-                    const startNodeObj = nodes.find(n => n.id === active_node_id);
-                    segments.push({
-                        id: nextSegmentId++, start_node: active_node_id, end_node: clickedNode.id,
-                        centerline: { polyline: [{ x: startNodeObj.x, y: startNodeObj.y }, { x: clickedNode.x, y: clickedNode.y }] }
-                    });
-                    updateIntersections();
-                }
-                active_node_id = clickedNode.id;
-            } else {
-                const newNode = { id: nextNodeId++, x, y };
-                if (active_node_id !== null) {
-                    const sNode = nodes.find(n => n.id === active_node_id);
-                    segments.push({
-                        id: nextSegmentId++, start_node: active_node_id, end_node: newNode.id,
-                        centerline: { polyline: [{ x: sNode.x, y: sNode.y }, { x: newNode.x, y: newNode.y }] }
-                    });
-                }
-                nodes.push(newNode); active_node_id = newNode.id; updateIntersections();
-            }
-            render();
+            const cp1 = { x: fromLN.x + dirFrom.x * 15, y: fromLN.y + dirFrom.y * 15 };
+            const cp2 = { x: toLN.x + dirTo.x * 15, y: toLN.y + dirTo.y * 15 };
+
+            this.laneStructures.turnCurves.push({
+                fromId: fromLN.id,
+                toId: toLN.id,
+                curvePoints: [{ x: fromLN.x, y: fromLN.y }, cp1, cp2, { x: toLN.x, y: toLN.y }]
+            });
         });
+    }
 
-        function render() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+    _calculateVector(fromNode, toNode) {
+        const dx = toNode.x - fromNode.x;
+        const dy = toNode.y - fromNode.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        return { x: dx / len, y: dy / len };
+    }
+}
 
-            // 1. Road Polygon 렌더링 (가장 아래 레이어, 넓은 폭의 다각형)
-            roadPolygons.forEach(rp => {
-                const poly = rp.polygon_vertices;
-                if (!poly || poly.length < 3) return;
+// ============================================================================
+// 3. UI CONTROLLER & VIEW RENDERER (완벽하게 격리된 시각화 장치)
+// ============================================================================
+const engine = new RoadNetworkEngine();
+const canvas = document.getElementById('roadCanvas');
+const ctx = canvas.getContext('2d');
 
-                ctx.beginPath();
-                ctx.moveTo(poly[0].x, poly[0].y);
-                for (let i = 1; i < poly.length; i++) {
-                    ctx.lineTo(poly[i].x, poly[i].y);
-                }
-                ctx.closePath();
-                ctx.fillStyle = '#E9ECEF'; // 밝은 회색 면
-                ctx.fill();
-                ctx.strokeStyle = '#CED4DA'; // 테두리 선
-                ctx.lineWidth = 1;
-                ctx.stroke();
-            });
+function logger(msg) {
+    const logBox = document.getElementById('log');
+    logBox.innerHTML += `> ${msg}<br>`;
+    logBox.scrollTop = logBox.scrollHeight;
+}
 
-            // 2. 기존 Road Segment & Centerline
-            segments.forEach(s => {
-                const [p1, p2] = s.centerline.polyline;
-                ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
-                ctx.lineWidth = 14; ctx.strokeStyle = '#ADB5BD'; ctx.setLineDash([]); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
-                ctx.lineWidth = 2; ctx.strokeStyle = '#FCC419'; ctx.setLineDash([8, 8]); ctx.stroke();
-            });
-            ctx.setLineDash([]);
+function buildSampleNetwork() {
+    engine.clearAll();
+    logger("기존 맵 초기화 및 순수 위상 노드 배치 시작...");
 
-            // 3. Intersection Boundary
-            intersections.forEach(intersect => {
-                const poly = intersect.boundary_polygon;
-                ctx.beginPath(); ctx.moveTo(poly[0].x, poly[0].y);
-                poly.forEach(p => ctx.lineTo(p.x, p.y));
-                ctx.closePath(); ctx.fillStyle = 'rgba(156, 39, 176, 0.15)'; ctx.fill();
-                ctx.strokeStyle = '#9C27B0'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.stroke();
-            });
-            ctx.setLineDash([]);
+    // 1. 위상 기하 중심 제어점 데이터 정의 (Z축 값 포함 가능 구조)
+    engine.addNode("N-Center", 450, 350); 
+    engine.addNode("N-West", 150, 350);
+    engine.addNode("N-East", 750, 350);
+    engine.addNode("N-South", 450, 600);
+    engine.addNode("N-North", 450, 100);
 
-            // 4. Turn Curve
-            turnCurves.forEach(curve => {
-                const pts = curve.sample_points;
-                ctx.beginPath();
-                ctx.moveTo(pts[0].x, pts[0].y);
-                for (let i = 1; i < pts.length; i++) {
-                    ctx.lineTo(pts[i].x, pts[i].y);
-                }
-                ctx.strokeStyle = '#339AF0';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            });
+    // 2. 도로 노드 간 연결 매핑 세그먼트 주입 (4지 교차로 구조 빌드)
+    engine.addSegment("R-West", "N-West", "N-Center", 4, 5);  // 4차선 도로
+    engine.addSegment("R-East", "N-Center", "N-East", 4, 5);  // 4차선 도로
+    engine.addSegment("R-South", "N-Center", "N-South", 2, 5); // 2차선 도로
+    engine.addSegment("R-North", "N-North", "N-Center", 2, 5); // 2차선 도로
 
-            // 5. Lanes (Centerline & Boundaries)
-            lanes.forEach(l => {
-                const [cp1, cp2] = l.lane_centerline.polyline;
-                const [lp1, lp2] = l.boundaries.left;
-                const [rp1, rp2] = l.boundaries.right;
+    // 중복 생성 차단 제약조건 동작 테스트 검증용 코드
+    const duplicateCheck = engine.addSegment("R-Dup-Check", "N-West", "N-Center", 2, 5);
+    if(!duplicateCheck) logger("[제약 예외 처리] 동일 구간 중복 세그먼트 생성 요청 자동 방어 성공.");
 
-                ctx.beginPath(); ctx.moveTo(lp1.x, lp1.y); ctx.lineTo(lp2.x, lp2.y);
-                ctx.strokeStyle = '#2B8A3E'; ctx.lineWidth = 1; ctx.stroke();
+    logger("Core 위상 그래프 저장 완료. (아직 파생 지오메트리 미작동 단계)");
+    render();
+}
 
-                ctx.beginPath(); ctx.moveTo(rp1.x, rp1.y); ctx.lineTo(rp2.x, rp2.y);
-                ctx.strokeStyle = '#2B8A3E'; ctx.lineWidth = 1; ctx.stroke();
+function runPipeline() {
+    logger("---------------------------------------");
+    logger("중앙 파이프라인 연산 모듈 트리거 기동.");
+    
+    console.time("Engine Execution");
+    const isSuccess = engine.updatePipeline();
+    console.timeEnd("Engine Execution");
 
-                ctx.beginPath(); ctx.moveTo(cp1.x, cp1.y); ctx.lineTo(cp2.x, cp2.y);
-                ctx.strokeStyle = '#38D9A9'; ctx.lineWidth = 3; ctx.stroke();
-            });
+    if (isSuccess) {
+        logger("Step 1: Centerline 생성 완료.");
+        logger("Step 2: Intersection & Boundary 수립 완료.");
+        logger("Step 3: Boundary선 위 차선 노드 매핑 완료.");
+        logger("Step 4: Incoming → Outgoing 차선 위상 결합 완료.");
+        logger("Step 5: Road Polygon 메쉬 파생 계산 및 곡선 곡률 연산 완료.");
+        logger("결과: 파이프라인 구조적 연동 대성공.");
+    } else {
+        logger("에러: 단계 연산 중 의존성 붕괴 발생.");
+    }
+    render();
+}
 
-            // 6. Lane Nodes
-            laneNodes.forEach(ln => {
-                ctx.beginPath(); ctx.arc(ln.position.x, ln.position.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = '#20C997'; ctx.fill();
-            });
+function render() {
+    // 캔버스 초기화
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 7. Central Nodes
-            nodes.forEach(node => {
-                ctx.beginPath(); ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
-                ctx.fillStyle = node.id === active_node_id ? '#FF6B6B' : '#4A90E2';
-                ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-                ctx.fillStyle = '#fff'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-                ctx.fillText(node.id, node.x, node.y + 5);
-            });
-        }
+    // 1. 파생 지오메트리: Road Polygons 면 렌더링 (가장 하단 레이어)
+    ctx.fillStyle = '#282828';
+    ctx.strokeStyle = '#444444';
+    ctx.lineWidth = 1.5;
+    engine.laneStructures.roadPolygons.forEach(poly => {
+        ctx.beginPath();
+        poly.polygonPoints.forEach((p, idx) => {
+            if (idx === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    });
 
-        resizeCanvas();
-    </script>
+    // 2. 파생 지오메트리: Centerline 선형 그리기
+    ctx.strokeStyle = '#ffaa00';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 5]);
+    engine.centerlines.forEach(line => {
+        ctx.beginPath();
+        line.vertices.forEach((v, idx) => {
+            if (idx === 0) ctx.moveTo(v.x, v.y);
+            else ctx.lineTo(v.x, v.y);
+        });
+        ctx.stroke();
+    });
+    ctx.setLineDash([]); // 대시 스타일 초기화
+
+    // 3. 파생 구조: 교차로 바운더리 폴리곤 렌더링 (Intersection Boundary)
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2;
+    engine.intersections.forEach(inter => {
+        ctx.beginPath();
+        inter.boundaryPolygon.forEach((p, idx) => {
+            if (idx === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+    });
+
+    // 4. 파생 구조: 교차로 내부 유효 경로 Turn Curve (3차 베지에 연산 결과)
+    ctx.strokeStyle = 'rgba(0, 150, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    engine.laneStructures.turnCurves.forEach(curve => {
+        ctx.beginPath();
+        ctx.moveTo(curve.curvePoints[0].x, curve.curvePoints[0].y);
+        ctx.bezierCurveTo(
+            curve.curvePoints[1].x, curve.curvePoints[1].y,
+            curve.curvePoints[2].x, curve.curvePoints[2].y,
+            curve.curvePoints[3].x, curve.curvePoints[3].y
+        );
+        ctx.stroke();
+    });
+
+    // 5. 기본 구조: 핵심 원자재 Node 시각화 (가장 상단 레이어 구성)
+    engine.nodes.forEach(node => {
+        const isInter = node.connectedSegments.length >= 3;
+        ctx.fillStyle = isInter ? '#ff3366' : '#ffffff';
+        ctx.shadowColor = isInter ? '#ff3366' : '#ffffff';
+        ctx.shadowBlur = 8;
+        
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, isInter ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0; // 그림자 초기화
+
+        // 디버깅 라벨링 텍스트 출력
+        ctx.fillStyle = '#888';
+        ctx.font = '10px Consolas';
+        ctx.fillText(node.id, node.x - 15, node.y - 12);
+    });
+
+    // 6. 파생 구조: Boundary 표면 정밀 분할 배치 완료된 Lane Nodes 렌더링
+    engine.laneStructures.laneNodes.forEach(ln => {
+        ctx.fillStyle = ln.type === 'INCOMING' ? '#00ff00' : '#ffff00';
+        ctx.beginPath();
+        ctx.arc(ln.x, ln.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// 초기 화면 렌더링 기본 구동
+buildSampleNetwork();
+</script>
 </body>
 </html>
