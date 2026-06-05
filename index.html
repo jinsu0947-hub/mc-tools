@@ -1,5 +1,885 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>McRAD — Road Editor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0e0f11; --panel: #16181c; --border: #2a2d35;
+    --accent: #4ade80; --accent2: #facc15; --text: #e2e4e9;
+    --muted: #5a5f6e; --danger: #f87171; --cp: #60a5fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans KR', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 48px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
+  .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; color: var(--accent); letter-spacing: 0.08em; }
+  .logo span { color: var(--muted); }
+  .header-sep { width: 1px; height: 20px; background: var(--border); }
+  .tool-group { display: flex; gap: 3px; }
+  .tool-btn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 4px; border: 1px solid transparent; background: transparent; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .tool-btn:hover { background: var(--border); color: var(--text); }
+  .tool-btn.active { background: rgba(74,222,128,0.12); border-color: rgba(74,222,128,0.3); color: var(--accent); }
+  .tool-btn.seg-btn.active { background: rgba(96,165,250,0.12); border-color: rgba(96,165,250,0.3); color: var(--cp); }
+  .tool-btn.danger:hover { background: rgba(248,113,113,0.12); color: var(--danger); }
+  .spacer { flex: 1; }
+  .save-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--accent); background: rgba(74,222,128,0.1); color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .save-btn:hover { background: rgba(74,222,128,0.2); }
+  .load-btn { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .load-btn:hover { border-color: var(--text); color: var(--text); }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  .sidebar { width: 220px; border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-section { border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sidebar-section.roads-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-bottom: none; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .section-add { width: 18px; height: 18px; border-radius: 3px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+  .section-add:hover { border-color: var(--accent); color: var(--accent); }
+  .layer-list { padding: 3px 8px 6px; }
+  .layer-item { display: flex; align-items: center; gap: 7px; padding: 4px 7px; border-radius: 4px; cursor: pointer; transition: background 0.1s; font-size: 12px; }
+  .layer-item:hover { background: var(--border); }
+  .layer-item.active { background: rgba(74,222,128,0.08); }
+  .layer-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .layer-name { flex: 1; }
+  .layer-vis { width: 16px; height: 16px; opacity: 0.4; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
+  .layer-vis:hover { opacity: 1; }
+  .layer-vis.hidden { opacity: 0.2; }
+  .road-list { flex: 1; overflow-y: auto; padding: 3px 8px 6px; }
+  .road-list::-webkit-scrollbar { width: 3px; }
+  .road-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .road-item { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 4px; cursor: pointer; transition: background 0.1s; font-size: 12px; border: 1px solid transparent; }
+  .road-item:hover { background: var(--border); }
+  .road-item.selected { background: rgba(74,222,128,0.08); border-color: rgba(74,222,128,0.2); }
+  .road-color { width: 3px; height: 22px; border-radius: 2px; flex-shrink: 0; }
+  .road-info { flex: 1; min-width: 0; }
+  .road-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .road-meta { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+  .road-del { opacity: 0; background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 3px; transition: opacity 0.15s; }
+  .road-item:hover .road-del { opacity: 0.6; }
+  .road-del:hover { opacity: 1 !important; }
+
+  .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+  canvas { position: absolute; top: 0; left: 0; }
+  .canvas-coords { position: absolute; bottom: 10px; left: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); pointer-events: none; }
+  .canvas-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); pointer-events: none; background: rgba(14,15,17,0.85); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); white-space: nowrap; }
+
+  .inspector { width: 220px; border-left: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; flex-shrink: 0; }
+  .inspector-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 11px; font-family: 'IBM Plex Mono', monospace; }
+  .inspector-empty svg { opacity: 0.2; }
+  .inspector-content { flex: 1; overflow-y: auto; padding: 8px; }
+  .inspector-content::-webkit-scrollbar { width: 3px; }
+  .inspector-content::-webkit-scrollbar-thumb { background: var(--border); }
+  .prop-group { margin-bottom: 14px; }
+  .prop-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; padding: 0 4px; }
+  .prop-row { display: flex; align-items: center; gap: 7px; padding: 3px 4px; margin-bottom: 2px; }
+  .prop-key { font-size: 11px; color: var(--muted); width: 68px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; }
+  .prop-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 6px; outline: none; transition: border-color 0.15s; min-width: 0; }
+  .prop-input:focus { border-color: var(--accent); }
+  .prop-input[type="number"] { -moz-appearance: textfield; }
+  .prop-input[type="number"]::-webkit-inner-spin-button { display: none; }
+  .prop-select { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 6px; outline: none; cursor: pointer; min-width: 0; }
+  .apply-btn { width: 100%; margin-top: 4px; padding: 7px; border-radius: 4px; border: 1px solid var(--accent); background: rgba(74,222,128,0.1); color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .apply-btn:hover { background: rgba(74,222,128,0.2); }
+
+  /* 세그먼트 타입 버튼 */
+  .seg-type-group { display: flex; gap: 4px; flex: 1; }
+  .seg-type-btn { flex: 1; padding: 4px 0; border-radius: 3px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 10px; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .seg-type-btn:hover { border-color: var(--cp); color: var(--cp); }
+  .seg-type-btn.active { background: rgba(96,165,250,0.12); border-color: rgba(96,165,250,0.4); color: var(--cp); }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 290px; }
+  .modal-title { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); margin-bottom: 14px; }
+  .modal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .modal-label { font-size: 11px; color: var(--muted); width: 56px; font-family: 'IBM Plex Mono', monospace; }
+  .modal-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 5px 8px; outline: none; }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  .modal-cancel { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; }
+  .modal-ok { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--accent); background: rgba(74,222,128,0.1); color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; }
+
+  #fileInput { display: none; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Mc<span>RAD</span></div>
+  <div class="status-dot"></div>
+  <div class="header-sep"></div>
+  <div class="tool-group">
+    <button class="tool-btn active" id="toolDraw" onclick="setTool('draw')">✏ 그리기</button>
+    <button class="tool-btn" id="toolSelect" onclick="setTool('select')">↗ 선택</button>
+    <button class="tool-btn" id="toolNode" onclick="setTool('node')">◎ 노드편집</button>
+    <button class="tool-btn" id="toolPan" onclick="setTool('pan')">✥ 이동</button>
+  </div>
+  <div class="header-sep"></div>
+  <div class="tool-group" id="segToolGroup" style="display:none">
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-right:4px">세그먼트:</span>
+    <button class="tool-btn seg-btn" id="segLine" onclick="setSegType('line')">직선</button>
+    <button class="tool-btn seg-btn" id="segArc" onclick="setSegType('arc')">원호</button>
+    <button class="tool-btn seg-btn" id="segBezier" onclick="setSegType('bezier')">베지어</button>
+  </div>
+  <div class="header-sep"></div>
+  <button class="tool-btn danger" onclick="clearCanvas()">✕ 전체삭제</button>
+  <div class="spacer"></div>
+  <button class="load-btn" onclick="document.getElementById('fileInput').click()">불러오기</button>
+  <button class="save-btn" onclick="saveProject()">저장 (JSON)</button>
+  <input type="file" id="fileInput" accept=".json" onchange="loadProject(event)">
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span>레이어</span>
+        <button class="section-add" onclick="openLayerModal()">+</button>
+      </div>
+      <div class="layer-list" id="layerList"></div>
+    </div>
+    <div class="sidebar-section roads-section">
+      <div class="section-header"><span>도로 목록</span></div>
+      <div class="road-list" id="roadList"></div>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gridCanvas"></canvas>
+    <canvas id="mainCanvas"></canvas>
+    <div class="canvas-coords" id="coordDisplay">x: 0, z: 0</div>
+    <div class="canvas-hint" id="canvasHint"></div>
+  </div>
+
+  <div class="inspector">
+    <div class="section-header" style="flex-shrink:0"><span>속성</span></div>
+    <div id="inspectorEmpty" class="inspector-empty">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+      </svg>
+      <span>도로를 선택하세요</span>
+    </div>
+    <div id="inspectorContent" class="inspector-content" style="display:none">
+      <div class="prop-group">
+        <div class="prop-label">기본 정보</div>
+        <div class="prop-row"><span class="prop-key">이름</span><input class="prop-input" id="propName" placeholder="중앙대로"></div>
+        <div class="prop-row"><span class="prop-key">레이어</span><select class="prop-select" id="propLayer"></select></div>
+      </div>
+      <div class="prop-group">
+        <div class="prop-label">도로 속성</div>
+        <div class="prop-row"><span class="prop-key">차선 수</span><input class="prop-input" id="propLanes" type="number" min="1" max="20" placeholder="2"></div>
+        <div class="prop-row"><span class="prop-key">제한속도</span><input class="prop-input" id="propSpeed" type="number" min="10" max="120" placeholder="50"></div>
+        <div class="prop-row">
+          <span class="prop-key">유형</span>
+          <select class="prop-select" id="propType">
+            <option value="local">이면도로</option>
+            <option value="collector">집산도로</option>
+            <option value="arterial">간선도로</option>
+            <option value="highway">고속도로</option>
+          </select>
+        </div>
+      </div>
+      <div class="prop-group" id="segGroup" style="display:none">
+        <div class="prop-label">선택 세그먼트</div>
+        <div class="prop-row" id="segTypeRow">
+          <span class="prop-key">곡선형</span>
+          <div class="seg-type-group">
+            <button class="seg-type-btn active" id="stLine" onclick="changeSegType('line')">직선</button>
+            <button class="seg-type-btn" id="stArc" onclick="changeSegType('arc')">원호</button>
+            <button class="seg-type-btn" id="stBezier" onclick="changeSegType('bezier')">베지어</button>
+          </div>
+        </div>
+        <div id="arcProps" style="display:none">
+          <div class="prop-row"><span class="prop-key">반지름</span><input class="prop-input" id="propRadius" type="number" min="1" placeholder="50"></div>
+          <div class="prop-row"><span class="prop-key">방향</span>
+            <select class="prop-select" id="propArcDir">
+              <option value="1">우회전</option>
+              <option value="-1">좌회전</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="prop-group">
+        <div class="prop-label">정보</div>
+        <div class="prop-row"><span class="prop-key">길이</span><span id="propLength" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)">-</span></div>
+        <div class="prop-row"><span class="prop-key">노드 수</span><span id="propNodes" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)">-</span></div>
+        <div class="prop-row"><span class="prop-key">세그먼트</span><span id="propSegs" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)">-</span></div>
+      </div>
+      <button class="apply-btn" onclick="applyProps()">적용</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="layerModal">
+  <div class="modal">
+    <div class="modal-title">// 새 레이어</div>
+    <div class="modal-row"><span class="modal-label">이름</span><input class="modal-input" id="newLayerName" placeholder="간선도로"></div>
+    <div class="modal-row"><span class="modal-label">색상</span><input type="color" id="newLayerColor" value="#4ade80" style="width:40px;height:26px;border:none;background:none;cursor:pointer;padding:0"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeLayerModal()">취소</button>
+      <button class="modal-ok" onclick="addLayer()">추가</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  데이터 구조
+//  road.segments[i] = { type: 'line'|'arc'|'bezier', cp1?: {x,y}, cp2?: {x,y}, radius?: number, dir?: number }
+//  세그먼트 i는 nodes[i] → nodes[i+1] 구간
+// ══════════════════════════════════════════
+let state = {
+  layers: [
+    { id: 'l1', name: '간선도로', color: '#ef4444', visible: true },
+    { id: 'l2', name: '집산도로', color: '#facc15', visible: true },
+    { id: 'l3', name: '이면도로', color: '#94a3b8', visible: true },
+  ],
+  roads: [],
+  activeLayer: 'l1',
+  selectedRoad: null,
+  selectedSeg: null,   // 선택된 세그먼트 인덱스
+  selectedNode: null,  // 노드편집 도구: 선택된 {roadId, nodeIndex}
+  draggingCP: null,    // { roadId, segIdx, cpKey } 제어점 드래그
+  tool: 'draw',
+  drawing: { active: false, nodes: [] },
+  view: { offsetX: 0, offsetY: 0, zoom: 1 },
+  grid: 20,
+};
+
+let idCounter = 1;
+const genId = p => `${p}_${Date.now()}_${idCounter++}`;
+
+// ── 캔버스
+const wrap = document.getElementById('canvasWrap');
+const gridCanvas = document.getElementById('gridCanvas');
+const mainCanvas = document.getElementById('mainCanvas');
+const gCtx = gridCanvas.getContext('2d');
+const ctx = mainCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  gridCanvas.width = mainCanvas.width = w;
+  gridCanvas.height = mainCanvas.height = h;
+  drawGrid(); drawAll();
+}
+window.addEventListener('resize', resizeCanvases);
+setTimeout(resizeCanvases, 50);
+
+// ── 좌표
+function toScreen(wx, wy) {
+  return { x: wx * state.grid * state.view.zoom + state.view.offsetX, y: wy * state.grid * state.view.zoom + state.view.offsetY };
+}
+function toWorld(sx, sy) {
+  return { x: (sx - state.view.offsetX) / (state.grid * state.view.zoom), y: (sy - state.view.offsetY) / (state.grid * state.view.zoom) };
+}
+function snapToGrid(wx, wy) { return { x: Math.round(wx * 2) / 2, y: Math.round(wy * 2) / 2 }; }
+
+// ── 격자
+function drawGrid() {
+  const w = gridCanvas.width, h = gridCanvas.height;
+  const step = state.grid * state.view.zoom;
+  gCtx.clearRect(0, 0, w, h);
+  const ox = ((state.view.offsetX % step) + step) % step;
+  const oy = ((state.view.offsetY % step) + step) % step;
+  gCtx.strokeStyle = '#1e2128'; gCtx.lineWidth = 1;
+  for (let x = ox; x < w; x += step) { gCtx.beginPath(); gCtx.moveTo(x,0); gCtx.lineTo(x,h); gCtx.stroke(); }
+  for (let y = oy; y < h; y += step) { gCtx.beginPath(); gCtx.moveTo(0,y); gCtx.lineTo(w,y); gCtx.stroke(); }
+  const o = toScreen(0, 0);
+  gCtx.strokeStyle = '#2a4a2a'; gCtx.lineWidth = 1;
+  if (o.x >= 0 && o.x <= w) { gCtx.beginPath(); gCtx.moveTo(o.x,0); gCtx.lineTo(o.x,h); gCtx.stroke(); }
+  if (o.y >= 0 && o.y <= h) { gCtx.beginPath(); gCtx.moveTo(0,o.y); gCtx.lineTo(w,o.y); gCtx.stroke(); }
 }
 
+// ══════════════════════════════════════════
+//  곡선 경로 생성
+// ══════════════════════════════════════════
+function buildSegmentPath(ctx2d, seg, a, b) {
+  // a, b: 스크린 좌표
+  const type = seg ? seg.type : 'line';
+  if (type === 'bezier') {
+    const cp1 = seg.cp1 ? toScreen(seg.cp1.x, seg.cp1.y) : lerp(a, b, 0.33);
+    const cp2 = seg.cp2 ? toScreen(seg.cp2.x, seg.cp2.y) : lerp(a, b, 0.67);
+    ctx2d.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, b.x, b.y);
+  } else if (type === 'arc') {
+    const r = (seg.radius || 50) * state.grid * state.view.zoom;
+    const dir = seg.dir || 1;
+    drawArcSegment(ctx2d, a, b, r, dir);
+  } else {
+    ctx2d.lineTo(b.x, b.y);
+  }
+}
+
+function lerp(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
+
+function drawArcSegment(ctx2d, a, b, r, dir) {
+  // 두 점 사이 원호: 주어진 반지름, 방향(1=우, -1=좌)
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) { ctx2d.lineTo(b.x, b.y); return; }
+  const minR = dist / 2;
+  const clampedR = Math.max(r, minR + 0.01);
+  const h = Math.sqrt(clampedR * clampedR - (dist / 2) * (dist / 2));
+  const nx = -dy / dist, ny = dx / dist;
+  const cx = mx + dir * h * nx;
+  const cy = my + dir * h * ny;
+  const startAngle = Math.atan2(a.y - cy, a.x - cx);
+  const endAngle = Math.atan2(b.y - cy, b.x - cx);
+  // dir=1 → counterclockwise=false(우회전), dir=-1 → ccw=true(좌회전)
+  ctx2d.arc(cx, cy, clampedR, startAngle, endAngle, dir === -1);
+}
+
+// 세그먼트 샘플링 (히트테스트, 길이 계산용)
+function sampleSegment(seg, a, b, steps = 20) {
+  const pts = [];
+  if (!seg || seg.type === 'line') {
+    pts.push(a, b);
+  } else if (seg.type === 'bezier') {
+    const cp1 = seg.cp1 || lerp(a, b, 0.33);
+    const cp2 = seg.cp2 || lerp(a, b, 0.67);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const mt = 1 - t;
+      pts.push({
+        x: mt*mt*mt*a.x + 3*mt*mt*t*cp1.x + 3*mt*t*t*cp2.x + t*t*t*b.x,
+        y: mt*mt*mt*a.y + 3*mt*mt*t*cp1.y + 3*mt*t*t*cp2.y + t*t*t*b.y,
+      });
+    }
+  } else if (seg.type === 'arc') {
+    const r = (seg.radius || 50) * state.grid * state.view.zoom;
+    const dir = seg.dir || 1;
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const dist = Math.hypot(dx,dy);
+    if (dist === 0) { pts.push(a,b); return pts; }
+    const minR = dist/2;
+    const clampedR = Math.max(r, minR+0.01);
+    const h = Math.sqrt(clampedR*clampedR - (dist/2)*(dist/2));
+    const nx = -dy/dist, ny = dx/dist;
+    const cx = mx + dir*h*nx, cy = my + dir*h*ny;
+    let sa = Math.atan2(a.y-cy, a.x-cx);
+    let ea = Math.atan2(b.y-cy, b.x-cx);
+    if (dir === -1) { if (ea > sa) ea -= 2*Math.PI; }
+    else { if (ea < sa) ea += 2*Math.PI; }
+    for (let i = 0; i <= steps; i++) {
+      const ang = sa + (ea-sa)*i/steps;
+      pts.push({ x: cx + clampedR*Math.cos(ang), y: cy + clampedR*Math.sin(ang) });
+    }
+  }
+  return pts;
+}
+
+// ══════════════════════════════════════════
+//  그리기
+// ══════════════════════════════════════════
+function getLayerColor(id) { const l = state.layers.find(x=>x.id===id); return l ? l.color : '#888'; }
+function getLayerVisible(id) { const l = state.layers.find(x=>x.id===id); return l ? l.visible : true; }
+function roadWidth(road) {
+  const lanes = road.props.lanes || 2;
+  return Math.max(2, lanes * 0.8) * state.grid * state.view.zoom * 0.18;
+}
+
+function drawRoad(road, isSelected) {
+  if (!getLayerVisible(road.layerId)) return;
+  const nodes = road.nodes;
+  if (nodes.length < 2) return;
+  const color = getLayerColor(road.layerId);
+  const lw = roadWidth(road);
+
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  // 선택 글로우
+  if (isSelected) {
+    ctx.shadowColor = color; ctx.shadowBlur = 14;
+    ctx.strokeStyle = color + '66'; ctx.lineWidth = lw + 8;
+    ctx.beginPath();
+    const s0 = toScreen(nodes[0].x, nodes[0].y);
+    ctx.moveTo(s0.x, s0.y);
+    for (let i = 1; i < nodes.length; i++) {
+      buildSegmentPath(ctx, road.segments[i-1], toScreen(nodes[i-1].x, nodes[i-1].y), toScreen(nodes[i].x, nodes[i].y));
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // 도로 본체
+  ctx.strokeStyle = color; ctx.lineWidth = lw;
+  ctx.beginPath();
+  const s0 = toScreen(nodes[0].x, nodes[0].y);
+  ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < nodes.length; i++) {
+    buildSegmentPath(ctx, road.segments[i-1], toScreen(nodes[i-1].x, nodes[i-1].y), toScreen(nodes[i].x, nodes[i].y));
+  }
+  ctx.stroke();
+
+  // 선택된 세그먼트 하이라이트
+  if (isSelected && state.selectedSeg !== null && state.selectedSeg < nodes.length - 1) {
+    const si = state.selectedSeg;
+    const sa = toScreen(nodes[si].x, nodes[si].y);
+    const sb = toScreen(nodes[si+1].x, nodes[si+1].y);
+    ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = lw + 3;
+    ctx.beginPath(); ctx.moveTo(sa.x, sa.y);
+    buildSegmentPath(ctx, road.segments[si], sa, sb);
+    ctx.stroke();
+
+    // 베지어 제어점 핸들
+    const seg = road.segments[si];
+    if (seg && seg.type === 'bezier') {
+      const cp1 = seg.cp1 ? toScreen(seg.cp1.x, seg.cp1.y) : lerp(sa, sb, 0.33);
+      const cp2 = seg.cp2 ? toScreen(seg.cp2.x, seg.cp2.y) : lerp(sa, sb, 0.67);
+      ctx.strokeStyle = '#60a5fa44'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(cp1.x, cp1.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sb.x, sb.y); ctx.lineTo(cp2.x, cp2.y); ctx.stroke();
+      ctx.setLineDash([]);
+      drawCP(cp1, '#60a5fa');
+      drawCP(cp2, '#a78bfa');
+    }
+  }
+
+  // 노드
+  for (let i = 0; i < nodes.length; i++) {
+    const s = toScreen(nodes[i].x, nodes[i].y);
+    const isSelNode = state.tool === 'node' && state.selectedNode && state.selectedNode.roadId === road.id && state.selectedNode.nodeIndex === i;
+    ctx.fillStyle = isSelNode ? '#fff' : (isSelected ? color : color + '99');
+    ctx.beginPath(); ctx.arc(s.x, s.y, isSelected ? 4 : 3, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawCP(s, color) {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#fff4';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+}
+
+function drawDrawing() {
+  const nodes = state.drawing.nodes;
+  if (nodes.length === 0) return;
+  const color = getLayerColor(state.activeLayer);
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 2;
+  ctx.setLineDash([6,4]);
+  ctx.beginPath();
+  const s0 = toScreen(nodes[0].x, nodes[0].y); ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < nodes.length; i++) {
+    const s = toScreen(nodes[i].x, nodes[i].y); ctx.lineTo(s.x, s.y);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  for (const n of nodes) {
+    const s = toScreen(n.x, n.y);
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAll() {
+  ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+  for (const road of state.roads) drawRoad(road, road.id === state.selectedRoad);
+  if (state.drawing.active) drawDrawing();
+}
+
+// ══════════════════════════════════════════
+//  도구
+// ══════════════════════════════════════════
+function setTool(t) {
+  state.tool = t;
+  if (t !== 'draw') { state.drawing.active = false; state.drawing.nodes = []; }
+  if (t !== 'select' && t !== 'node') { state.selectedSeg = null; }
+  document.querySelectorAll('.tool-btn:not(.seg-btn)').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tool' + t.charAt(0).toUpperCase() + t.slice(1));
+  if (btn) btn.classList.add('active');
+  mainCanvas.style.cursor = t === 'pan' ? 'grab' : t === 'select' ? 'default' : t === 'node' ? 'move' : 'crosshair';
+  document.getElementById('segToolGroup').style.display = t === 'node' ? 'flex' : 'none';
+  updateHint(); drawAll();
+}
+
+let activeSegType = 'line';
+function setSegType(type) {
+  activeSegType = type;
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('seg' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
+  // 선택된 세그먼트에 즉시 적용
+  if (state.selectedRoad && state.selectedSeg !== null) {
+    const road = state.roads.find(r => r.id === state.selectedRoad);
+    if (road) {
+      const seg = road.segments[state.selectedSeg];
+      if (seg) {
+        seg.type = type;
+        if (type === 'bezier' && !seg.cp1) {
+          const a = road.nodes[state.selectedSeg], b = road.nodes[state.selectedSeg+1];
+          seg.cp1 = lerp(a, b, 0.33); seg.cp2 = lerp(a, b, 0.67);
+        }
+        updateSegInspector();
+        drawAll();
+      }
+    }
+  }
+}
+
+function changeSegType(type) {
+  const road = state.roads.find(r => r.id === state.selectedRoad);
+  if (!road || state.selectedSeg === null) return;
+  const seg = road.segments[state.selectedSeg];
+  if (!seg) return;
+  seg.type = type;
+  if (type === 'bezier' && !seg.cp1) {
+    const a = road.nodes[state.selectedSeg], b = road.nodes[state.selectedSeg+1];
+    seg.cp1 = lerp(a, b, 0.33); seg.cp2 = lerp(a, b, 0.67);
+  }
+  document.querySelectorAll('.seg-type-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('st' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
+  document.getElementById('arcProps').style.display = type === 'arc' ? 'block' : 'none';
+  drawAll();
+}
+
+const HINTS = {
+  draw: '클릭: 노드 추가 · 더블클릭/Enter: 완성 · Esc: 취소',
+  select: '도로 클릭: 선택 · 세그먼트 클릭: 곡선 편집',
+  node: '노드 드래그: 이동 · 제어점 드래그: 곡선 조정',
+  pan: '드래그: 화면 이동 · 스크롤: 줌',
+};
+function updateHint() { document.getElementById('canvasHint').textContent = HINTS[state.tool] || ''; }
+
+// ══════════════════════════════════════════
+//  마우스
+// ══════════════════════════════════════════
+let panStart = null, lastClick = 0, isDragging = false;
+let mouseDownPos = null;
+
+mainCanvas.addEventListener('mousemove', (e) => {
+  const rect = mainCanvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const w = toWorld(sx, sy);
+  const sn = snapToGrid(w.x, w.y);
+  document.getElementById('coordDisplay').textContent = `x: ${sn.x.toFixed(1)},  z: ${sn.y.toFixed(1)}`;
+
+  if (state.tool === 'pan' && panStart) {
+    state.view.offsetX += e.movementX; state.view.offsetY += e.movementY;
+    drawGrid(); drawAll(); return;
+  }
+
+  // 노드 드래그
+  if (state.tool === 'node' && state.selectedNode && e.buttons === 1) {
+    const road = state.roads.find(r => r.id === state.selectedNode.roadId);
+    if (road) {
+      road.nodes[state.selectedNode.nodeIndex] = sn;
+      // 베지어 제어점도 같이 이동
+      drawAll(); isDragging = true; return;
+    }
+  }
+
+  // 제어점 드래그
+  if (state.draggingCP && e.buttons === 1) {
+    const road = state.roads.find(r => r.id === state.draggingCP.roadId);
+    if (road) {
+      const seg = road.segments[state.draggingCP.segIdx];
+      if (seg) { seg[state.draggingCP.cpKey] = sn; drawAll(); isDragging = true; return; }
+    }
+  }
+});
+
+mainCanvas.addEventListener('mousedown', (e) => {
+  isDragging = false;
+  const rect = mainCanvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  mouseDownPos = { x: sx, y: sy };
+
+  if (state.tool === 'pan') { panStart = {x: e.clientX, y: e.clientY}; mainCanvas.style.cursor = 'grabbing'; return; }
+
+  const w = toWorld(sx, sy);
+  const sn = snapToGrid(w.x, w.y);
+  const now = Date.now();
+  const isDbl = now - lastClick < 300; lastClick = now;
+
+  if (state.tool === 'draw') {
+    if (isDbl && state.drawing.nodes.length >= 2) { finishRoad(); return; }
+    if (!state.drawing.active) { state.drawing.active = true; state.drawing.nodes = []; }
+    state.drawing.nodes.push({ x: sn.x, y: sn.y });
+    drawAll(); return;
+  }
+
+  if (state.tool === 'node') {
+    const road = state.roads.find(r => r.id === state.selectedRoad);
+    if (!road) return;
+
+    // 제어점 클릭 확인
+    if (state.selectedSeg !== null) {
+      const seg = road.segments[state.selectedSeg];
+      if (seg && seg.type === 'bezier') {
+        const si = state.selectedSeg;
+        const sa = toScreen(road.nodes[si].x, road.nodes[si].y);
+        const sb = toScreen(road.nodes[si+1].x, road.nodes[si+1].y);
+        const cp1s = seg.cp1 ? toScreen(seg.cp1.x, seg.cp1.y) : lerp(sa, sb, 0.33);
+        const cp2s = seg.cp2 ? toScreen(seg.cp2.x, seg.cp2.y) : lerp(sa, sb, 0.67);
+        if (Math.hypot(sx-cp1s.x, sy-cp1s.y) < 8) { state.draggingCP = {roadId: road.id, segIdx: si, cpKey: 'cp1'}; return; }
+        if (Math.hypot(sx-cp2s.x, sy-cp2s.y) < 8) { state.draggingCP = {roadId: road.id, segIdx: si, cpKey: 'cp2'}; return; }
+      }
+    }
+
+    // 노드 클릭 확인
+    for (let i = 0; i < road.nodes.length; i++) {
+      const ns = toScreen(road.nodes[i].x, road.nodes[i].y);
+      if (Math.hypot(sx-ns.x, sy-ns.y) < 8) { state.selectedNode = {roadId: road.id, nodeIndex: i}; drawAll(); return; }
+    }
+    state.selectedNode = null;
+    return;
+  }
+
+  if (state.tool === 'select') {
+    // 먼저 선택된 도로의 세그먼트 클릭 확인
+    if (state.selectedRoad) {
+      const road = state.roads.find(r => r.id === state.selectedRoad);
+      if (road) {
+        const si = hitTestSegment(road, sx, sy);
+        if (si !== null) { selectSegment(si); return; }
+      }
+    }
+    const hit = hitTestRoad(sx, sy);
+    if (hit) {
+      selectRoad(hit.id);
+      const si = hitTestSegment(hit, sx, sy);
+      if (si !== null) selectSegment(si);
+    } else {
+      selectRoad(null);
+    }
+  }
+});
+
+mainCanvas.addEventListener('mouseup', () => {
+  if (state.tool === 'pan') { panStart = null; mainCanvas.style.cursor = 'grab'; }
+  state.draggingCP = null;
+  if (state.tool === 'node' && !isDragging) state.selectedNode = null;
+  isDragging = false;
+});
+
+mainCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = mainCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const nz = Math.min(8, Math.max(0.1, state.view.zoom * factor));
+  state.view.offsetX = mx - (mx - state.view.offsetX) * (nz / state.view.zoom);
+  state.view.offsetY = my - (my - state.view.offsetY) * (nz / state.view.zoom);
+  state.view.zoom = nz;
+  drawGrid(); drawAll();
+}, { passive: false });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { state.drawing.active = false; state.drawing.nodes = []; drawAll(); }
+  if (e.key === 'Enter' && state.drawing.active && state.drawing.nodes.length >= 2) finishRoad();
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedRoad && document.activeElement === document.body) {
+    deleteRoad(state.selectedRoad);
+  }
+});
+
+// ══════════════════════════════════════════
+//  히트 테스트
+// ══════════════════════════════════════════
+function hitTestRoad(sx, sy) {
+  for (let i = state.roads.length - 1; i >= 0; i--) {
+    const road = state.roads[i];
+    if (!getLayerVisible(road.layerId)) continue;
+    if (hitTestSegment(road, sx, sy) !== null) return road;
+  }
+  return null;
+}
+
+function hitTestSegment(road, sx, sy) {
+  const THRESH = 10;
+  for (let i = 0; i < road.nodes.length - 1; i++) {
+    const sa = toScreen(road.nodes[i].x, road.nodes[i].y);
+    const sb = toScreen(road.nodes[i+1].x, road.nodes[i+1].y);
+    const pts = sampleSegment(road.segments[i], sa, sb, 16);
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (distToSegment(sx, sy, pts[j].x, pts[j].y, pts[j+1].x, pts[j+1].y) < THRESH) return i;
+    }
+  }
+  return null;
+}
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx-ax, dy = by-ay, len2 = dx*dx+dy*dy;
+  if (len2 === 0) return Math.hypot(px-ax, py-ay);
+  let t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/len2));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+
+// ══════════════════════════════════════════
+//  도로/세그먼트 선택
+// ══════════════════════════════════════════
+function selectSegment(si) {
+  state.selectedSeg = si;
+  document.getElementById('segGroup').style.display = 'block';
+  const road = state.roads.find(r => r.id === state.selectedRoad);
+  if (!road) return;
+  updateSegInspector();
+  drawAll();
+}
+
+function updateSegInspector() {
+  const road = state.roads.find(r => r.id === state.selectedRoad);
+  if (!road || state.selectedSeg === null) return;
+  const seg = road.segments[state.selectedSeg] || { type: 'line' };
+  document.querySelectorAll('.seg-type-btn').forEach(b => b.classList.remove('active'));
+  const stBtn = document.getElementById('st' + seg.type.charAt(0).toUpperCase() + seg.type.slice(1));
+  if (stBtn) stBtn.classList.add('active');
+  document.getElementById('arcProps').style.display = seg.type === 'arc' ? 'block' : 'none';
+  if (seg.type === 'arc') {
+    document.getElementById('propRadius').value = seg.radius || 50;
+    document.getElementById('propArcDir').value = seg.dir || 1;
+  }
+}
+
+function finishRoad() {
+  if (state.drawing.nodes.length < 2) return;
+  const segments = [];
+  for (let i = 0; i < state.drawing.nodes.length - 1; i++) segments.push({ type: 'line' });
+  const road = {
+    id: genId('road'), layerId: state.activeLayer,
+    nodes: [...state.drawing.nodes], segments,
+    props: { name: '', lanes: 2, speed: 50, type: 'local' },
+  };
+  state.roads.push(road);
+  state.drawing.active = false; state.drawing.nodes = [];
+  selectRoad(road.id); renderRoadList(); drawAll();
+}
+
+function selectRoad(id) {
+  state.selectedRoad = id; state.selectedSeg = null; state.selectedNode = null;
+  const road = state.roads.find(r => r.id === id);
+  if (road) {
+    document.getElementById('inspectorEmpty').style.display = 'none';
+    document.getElementById('inspectorContent').style.display = 'block';
+    document.getElementById('propName').value = road.props.name || '';
+    document.getElementById('propLanes').value = road.props.lanes || 2;
+    document.getElementById('propSpeed').value = road.props.speed || 50;
+    document.getElementById('propType').value = road.props.type || 'local';
+    document.getElementById('segGroup').style.display = 'none';
+    const sel = document.getElementById('propLayer');
+    sel.innerHTML = state.layers.map(l => `<option value="${l.id}" ${l.id === road.layerId ? 'selected' : ''}>${l.name}</option>`).join('');
+    updateRoadInfo(road);
+  } else {
+    document.getElementById('inspectorEmpty').style.display = 'flex';
+    document.getElementById('inspectorContent').style.display = 'none';
+  }
+  renderRoadList(); drawAll();
+}
+
+function updateRoadInfo(road) {
+  let len = 0;
+  for (let i = 0; i < road.nodes.length - 1; i++) {
+    const sa = toScreen(road.nodes[i].x, road.nodes[i].y);
+    const sb = toScreen(road.nodes[i+1].x, road.nodes[i+1].y);
+    const pts = sampleSegment(road.segments[i], sa, sb, 20);
+    for (let j = 0; j < pts.length - 1; j++) len += Math.hypot(pts[j+1].x-pts[j].x, pts[j+1].y-pts[j].y);
+  }
+  const worldLen = len / (state.grid * state.view.zoom);
+  document.getElementById('propLength').textContent = worldLen.toFixed(1) + ' blk';
+  document.getElementById('propNodes').textContent = road.nodes.length;
+  document.getElementById('propSegs').textContent = road.segments.length;
+}
+
+function deleteRoad(id) {
+  state.roads = state.roads.filter(r => r.id !== id);
+  if (state.selectedRoad === id) selectRoad(null);
+  renderRoadList(); drawAll();
+}
+
+function applyProps() {
+  const road = state.roads.find(r => r.id === state.selectedRoad);
+  if (!road) return;
+  road.props.name = document.getElementById('propName').value;
+  road.props.lanes = parseInt(document.getElementById('propLanes').value) || 2;
+  road.props.speed = parseInt(document.getElementById('propSpeed').value) || 50;
+  road.props.type = document.getElementById('propType').value;
+  road.layerId = document.getElementById('propLayer').value;
+  // 원호 속성
+  if (state.selectedSeg !== null) {
+    const seg = road.segments[state.selectedSeg];
+    if (seg && seg.type === 'arc') {
+      seg.radius = parseFloat(document.getElementById('propRadius').value) || 50;
+      seg.dir = parseInt(document.getElementById('propArcDir').value) || 1;
+    }
+  }
+  renderRoadList(); drawAll();
+}
+
+function clearCanvas() {
+  if (!confirm('모든 도로를 삭제하시겠습니까?')) return;
+  state.roads = []; selectRoad(null); renderRoadList(); drawAll();
+}
+
+// ══════════════════════════════════════════
+//  레이어
+// ══════════════════════════════════════════
+function renderLayerList() {
+  document.getElementById('layerList').innerHTML = state.layers.map(l => `
+    <div class="layer-item ${l.id === state.activeLayer ? 'active' : ''}" onclick="setActiveLayer('${l.id}')">
+      <div class="layer-dot" style="background:${l.color}"></div>
+      <span class="layer-name">${l.name}</span>
+      <span class="layer-vis ${l.visible ? '' : 'hidden'}" onclick="toggleLayer(event,'${l.id}')">${l.visible ? '●' : '○'}</span>
+    </div>`).join('');
+}
+
+function setActiveLayer(id) { state.activeLayer = id; renderLayerList(); }
+function toggleLayer(e, id) {
+  e.stopPropagation();
+  const l = state.layers.find(x => x.id === id);
+  if (l) { l.visible = !l.visible; renderLayerList(); drawAll(); }
+}
+function openLayerModal() { document.getElementById('newLayerName').value = ''; document.getElementById('layerModal').classList.add('open'); setTimeout(() => document.getElementById('newLayerName').focus(), 50); }
+function closeLayerModal() { document.getElementById('layerModal').classList.remove('open'); }
+function addLayer() {
+  const name = document.getElementById('newLayerName').value.trim();
+  const color = document.getElementById('newLayerColor').value;
+  if (!name) return;
+  const layer = { id: genId('layer'), name, color, visible: true };
+  state.layers.push(layer); state.activeLayer = layer.id;
+  closeLayerModal(); renderLayerList();
+}
+document.getElementById('layerModal').addEventListener('click', e => { if (e.target === document.getElementById('layerModal')) closeLayerModal(); });
+document.getElementById('newLayerName').addEventListener('keydown', e => { if (e.key === 'Enter') addLayer(); });
+
+// ══════════════════════════════════════════
+//  도로 목록
+// ══════════════════════════════════════════
+function renderRoadList() {
+  const el = document.getElementById('roadList');
+  if (!state.roads.length) { el.innerHTML = '<div style="padding:10px 8px;font-size:11px;color:var(--muted);font-family:\'IBM Plex Mono\',monospace">아직 도로 없음</div>'; return; }
+  el.innerHTML = state.roads.map(r => {
+    const color = getLayerColor(r.layerId);
+    const name = r.props.name || '(이름 없음)';
+    const segTypes = r.segments.map(s => s.type === 'arc' ? '⌒' : s.type === 'bezier' ? '〜' : '—').join('');
+    return `<div class="road-item ${r.id === state.selectedRoad ? 'selected' : ''}" onclick="selectRoad('${r.id}')">
+      <div class="road-color" style="background:${color}"></div>
+      <div class="road-info">
+        <div class="road-name">${name}</div>
+        <div class="road-meta">${r.props.lanes || 2}차선 · ${segTypes || '—'}</div>
+      </div>
+      <button class="road-del" onclick="event.stopPropagation();deleteRoad('${r.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════
+//  저장 / 불러오기
+// ══════════════════════════════════════════
+function saveProject() {
+  const data = { version: '0.2.0', module: 'McRAD', savedAt: new Date().toISOString(), layers: state.layers, roads: state.roads, view: state.view };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mcrad_${Date.now()}.json`; a.click();
+}
 function loadProject(e) {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
