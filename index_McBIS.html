@@ -1,1 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>McBIS — 준비 중</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0c0d0f; color: #e6e8ee;
+    font-family: 'IBM Plex Sans KR', sans-serif;
+    height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    text-align: center; padding: 24px;
+  }
+  .grid {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(#14161a 1px, transparent 1px),
+      linear-gradient(90deg, #14161a 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, #000 30%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, #000 30%, transparent 100%);
+  }
+  .content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .code { font-family: 'IBM Plex Mono', monospace; font-size: 56px; font-weight: 600; color: #facc15; letter-spacing: -0.02em; }
+  .name { font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.2em; color: #6b7280; text-transform: uppercase; }
+  .msg { font-size: 15px; font-weight: 300; color: #aab0bb; max-width: 380px; line-height: 1.7; margin-top: 8px; }
+  .back {
+    margin-top: 16px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+    color: #6b7280; text-decoration: none;
+    padding: 9px 18px; border: 1px solid #2a2d35; border-radius: 6px;
+    transition: all 0.15s;
+  }
+  .back:hover { border-color: #facc15; color: #e6e8ee; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="content">
+    <div class="code">McBIS</div>
+    <div class="name">Block &amp; Infrastructure System</div>
+    <p class="msg">블록·필지·건물 모듈은 McRAD 도로 모듈이 완성된 뒤 시작합니다. 도로가 도시의 뼈대이기 때문입니다.</p>
+    <a class="back" href="index.html">← 허브로 돌아가기</a>
+  </div>
+</body>
+</html>
 
